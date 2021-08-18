@@ -123,6 +123,7 @@ export interface ITerminalService extends ITerminalInstanceHost {
 	onDidChangeInstanceIcon: Event<ITerminalInstance | undefined>;
 	onDidChangeInstanceColor: Event<ITerminalInstance | undefined>;
 	onDidChangeInstancePrimaryStatus: Event<ITerminalInstance>;
+	onDidInputInstanceData: Event<ITerminalInstance>;
 	onDidRegisterProcessSupport: Event<void>;
 	onDidChangeConnectionState: Event<void>;
 	onDidChangeAvailableProfiles: Event<ITerminalProfile[]>;
@@ -319,7 +320,15 @@ export interface ITerminalFindHost {
 }
 
 export interface IRemoteTerminalService extends IOffProcessTerminalService {
-	createProcess(shellLaunchConfig: IShellLaunchConfig, configuration: ICompleteTerminalConfiguration, activeWorkspaceRootUri: URI | undefined, cols: number, rows: number, shouldPersist: boolean, configHelper: ITerminalConfigHelper): Promise<ITerminalChildProcess>;
+	createProcess(
+		shellLaunchConfig: IShellLaunchConfig,
+		configuration: ICompleteTerminalConfiguration,
+		activeWorkspaceRootUri: URI | undefined,
+		cols: number,
+		rows: number,
+		unicodeVersion: '6' | '11',
+		shouldPersist: boolean
+	): Promise<ITerminalChildProcess>;
 }
 
 /**
@@ -450,6 +459,7 @@ export interface ITerminalInstance {
 
 	onDidFocus: Event<ITerminalInstance>;
 	onDidBlur: Event<ITerminalInstance>;
+	onDidInputData: Event<ITerminalInstance>;
 
 	/**
 	 * An event that fires when a terminal is dropped on this instance via drag and drop.
@@ -702,7 +712,7 @@ export interface ITerminalInstance {
 	 *
 	 * @param shell The new launch configuration.
 	 */
-	reuseTerminal(shell: IShellLaunchConfig): void;
+	reuseTerminal(shell: IShellLaunchConfig): Promise<void>;
 
 	/**
 	 * Relaunches the terminal, killing it and reusing the launch config used initially. Any

@@ -89,6 +89,8 @@ import 'vs/workbench/contrib/notebook/browser/diff/notebookDiffActions';
 // Output renderers registration
 import 'vs/workbench/contrib/notebook/browser/view/output/transforms/richTransform';
 import { editorOptionsRegistry } from 'vs/editor/common/config/editorOptions';
+import { NotebookExecutionService } from 'vs/workbench/contrib/notebook/browser/notebookExecutionServiceImpl';
+import { INotebookExecutionService } from 'vs/workbench/contrib/notebook/common/notebookExecutionService';
 
 /*--------------------------------------------------------------------------------------------- */
 
@@ -370,7 +372,7 @@ class CellInfoContentProvider {
 		const sameStream = !outputs.find(op => op.mime !== mime);
 
 		if (sameStream) {
-			return outputs.map(opit => new TextDecoder().decode(opit.data)).join('');
+			return outputs.map(opit => opit.data.toString()).join('');
 		} else {
 			return null;
 		}
@@ -411,7 +413,7 @@ class CellInfoContentProvider {
 					metadata: output.metadata,
 					outputItems: output.outputs.map(opit => ({
 						mimeType: opit.mime,
-						data: new TextDecoder().decode(opit.data)
+						data: opit.data.toString()
 					}))
 				})));
 				const edits = format(content, undefined, {});
@@ -603,6 +605,7 @@ registerSingleton(INotebookEditorModelResolverService, NotebookModelResolverServ
 registerSingleton(INotebookCellStatusBarService, NotebookCellStatusBarService, true);
 registerSingleton(INotebookEditorService, NotebookEditorWidgetService, true);
 registerSingleton(INotebookKernelService, NotebookKernelService, true);
+registerSingleton(INotebookExecutionService, NotebookExecutionService, true);
 registerSingleton(INotebookRendererMessagingService, NotebookRendererMessagingService, true);
 
 const schemas: IJSONSchemaMap = {};
@@ -640,7 +643,8 @@ const editorOptionsCustomizationSchema: IConfigurationPropertySchema = {
 		// 		}
 		// 	}
 		// }
-	]
+	],
+	tags: ['notebookLayout']
 };
 
 const configurationRegistry = Registry.as<IConfigurationRegistry>(Extensions.Configuration);
@@ -685,7 +689,8 @@ configurationRegistry.registerConfiguration({
 		[NotebookTextDiffEditorPreview]: {
 			description: nls.localize('notebook.diff.enablePreview.description', "Whether to use the enhanced text diff editor for notebook."),
 			type: 'boolean',
-			default: true
+			default: true,
+			tags: ['notebookLayout']
 		},
 		[CellToolbarVisibility]: {
 			markdownDescription: nls.localize('notebook.cellToolbarVisibility.description', "Whether the cell toolbar should appear on hover or click."),
@@ -770,7 +775,8 @@ configurationRegistry.registerConfiguration({
 		[TextOutputLineLimit]: {
 			description: nls.localize('notebook.textOutputLineLimit', "Control how many lines of text in a text output is rendered."),
 			type: 'number',
-			default: 30
+			default: 30,
+			tags: ['notebookLayout']
 		},
 		[NotebookCellEditorOptionsCustomizations]: editorOptionsCustomizationSchema
 	}

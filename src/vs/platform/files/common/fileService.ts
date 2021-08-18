@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { coalesce, isNonEmptyArray } from 'vs/base/common/arrays';
+import { coalesce } from 'vs/base/common/arrays';
 import { Promises, ResourceQueue, ThrottledWorker } from 'vs/base/common/async';
 import { bufferedStreamToBuffer, bufferToReadable, newWriteableBufferStream, readableToBuffer, streamToBuffer, VSBuffer, VSBufferReadable, VSBufferReadableBufferedStream, VSBufferReadableStream } from 'vs/base/common/buffer';
 import { CancellationToken, CancellationTokenSource } from 'vs/base/common/cancellation';
@@ -200,13 +200,15 @@ export class FileService extends Disposable implements IFileService {
 			if (!trie) {
 				trie = TernarySearchTree.forUris<true>(() => !isPathCaseSensitive);
 				trie.set(resource, true);
-				if (isNonEmptyArray(resolveTo)) {
-					resolveTo.forEach(uri => trie!.set(uri, true));
+				if (resolveTo) {
+					for (const uri of resolveTo) {
+						trie.set(uri, true);
+					}
 				}
 			}
 
 			// check for recursive resolving
-			if (Boolean(trie.findSuperstr(stat.resource) || trie.get(stat.resource))) {
+			if (trie.get(stat.resource) || trie.findSuperstr(stat.resource.with({ query: null, fragment: null } /* required for https://github.com/microsoft/vscode/issues/128151 */))) {
 				return true;
 			}
 
@@ -418,7 +420,7 @@ export class FileService extends Disposable implements IFileService {
 		// but to the same length. This is a compromise we take to avoid having to produce checksums of
 		// the file content for comparison which would be much slower to compute.
 		if (
-			options && typeof options.mtime === 'number' && typeof options.etag === 'string' && options.etag !== ETAG_DISABLED &&
+			typeof options?.mtime === 'number' && typeof options.etag === 'string' && options.etag !== ETAG_DISABLED &&
 			typeof stat.mtime === 'number' && typeof stat.size === 'number' &&
 			options.mtime < stat.mtime && options.etag !== etag({ mtime: options.mtime /* not using stat.mtime for a reason, see above */, size: stat.size })
 		) {
@@ -496,7 +498,7 @@ export class FileService extends Disposable implements IFileService {
 			// due to the likelihood of hitting a NOT_MODIFIED_SINCE result.
 			// otherwise, we let it run in parallel to the file reading for
 			// optimal startup performance.
-			if (options && typeof options.etag === 'string' && options.etag !== ETAG_DISABLED) {
+			if (typeof options?.etag === 'string' && options.etag !== ETAG_DISABLED) {
 				await statPromise;
 			}
 
@@ -572,12 +574,12 @@ export class FileService extends Disposable implements IFileService {
 				let buffer = await provider.readFile(resource);
 
 				// respect position option
-				if (options && typeof options.position === 'number') {
+				if (typeof options?.position === 'number') {
 					buffer = buffer.slice(options.position);
 				}
 
 				// respect length option
-				if (options && typeof options.length === 'number') {
+				if (typeof options?.length === 'number') {
 					buffer = buffer.slice(0, options.length);
 				}
 
@@ -604,7 +606,7 @@ export class FileService extends Disposable implements IFileService {
 		}
 
 		// Throw if file not modified since (unless disabled)
-		if (options && typeof options.etag === 'string' && options.etag !== ETAG_DISABLED && options.etag === stat.etag) {
+		if (typeof options?.etag === 'string' && options.etag !== ETAG_DISABLED && options.etag === stat.etag) {
 			throw new NotModifiedSinceFileOperationError(localize('fileNotModifiedError', "File not modified since"), stat, options);
 		}
 

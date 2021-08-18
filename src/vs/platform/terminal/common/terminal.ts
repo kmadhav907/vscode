@@ -89,6 +89,8 @@ export const enum TerminalSettingId {
 	LocalEchoExcludePrograms = 'terminal.integrated.localEchoExcludePrograms',
 	LocalEchoStyle = 'terminal.integrated.localEchoStyle',
 	EnablePersistentSessions = 'terminal.integrated.enablePersistentSessions',
+	PersistentSessionScrollback = 'terminal.integrated.persistentSessionScrollback',
+	PersistentSessionExperimentalSerializer = 'terminal.integrated.persistentSessionExperimentalSerializer',
 	InheritEnv = 'terminal.integrated.inheritEnv',
 	ShowLinkHover = 'terminal.integrated.showLinkHover',
 	LockEditorGroup = 'terminal.integrated.lockEditorGroup'
@@ -199,6 +201,7 @@ export interface IPtyService {
 		cwd: string,
 		cols: number,
 		rows: number,
+		unicodeVersion: '6' | '11',
 		env: IProcessEnvironment,
 		executableEnv: IProcessEnvironment,
 		windowsEnableConpty: boolean,
@@ -222,6 +225,7 @@ export interface IPtyService {
 	getCwd(id: number): Promise<string>;
 	getLatency(id: number): Promise<number>;
 	acknowledgeDataEvent(id: number, charCount: number): Promise<void>;
+	setUnicodeVersion(id: number, version: '6' | '11'): Promise<void>;
 	processBinary(id: number, data: string): Promise<void>;
 	/** Confirm the process is _not_ an orphan. */
 	orphanQuestionReply(id: number): Promise<void>;
@@ -484,14 +488,22 @@ export interface ITerminalChildProcess {
 	 */
 	acknowledgeDataEvent(charCount: number): void;
 
+	/**
+	 * Sets the unicode version for the process, this drives the size of some characters in the
+	 * xterm-headless instance.
+	 */
+	setUnicodeVersion(version: '6' | '11'): Promise<void>;
+
 	getInitialCwd(): Promise<string>;
 	getCwd(): Promise<string>;
 	getLatency(): Promise<number>;
 }
 
 export interface IReconnectConstants {
-	GraceTime: number,
-	ShortGraceTime: number
+	graceTime: number;
+	shortGraceTime: number;
+	scrollback: number;
+	useExperimentalSerialization: boolean;
 }
 
 export const enum LocalReconnectConstants {
