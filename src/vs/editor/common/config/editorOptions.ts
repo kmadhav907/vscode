@@ -12,7 +12,6 @@ import { USUAL_WORD_SEPARATORS } from 'vs/editor/common/model/wordHelper';
 import { AccessibilitySupport } from 'vs/platform/accessibility/common/accessibility';
 import { IConfigurationPropertySchema } from 'vs/platform/configuration/common/configurationRegistry';
 import { IJSONSchema } from 'vs/base/common/jsonSchema';
-import product from 'vs/platform/product/common/product';
 
 //#region typed options
 
@@ -580,16 +579,6 @@ export interface IEditorOptions {
 	 */
 	renderControlCharacters?: boolean;
 	/**
-	 * Enable rendering of indent guides.
-	 * Defaults to true.
-	 */
-	renderIndentGuides?: boolean;
-	/**
-	 * Enable highlighting of the active indent guide.
-	 * Defaults to true.
-	 */
-	highlightActiveIndentGuide?: boolean;
-	/**
 	 * Enable rendering of current line highlight.
 	 * Defaults to all.
 	 */
@@ -649,6 +638,10 @@ export interface IEditorOptions {
 	 * Control if the editor should use shadow DOM.
 	 */
 	useShadowDOM?: boolean;
+	/**
+	 * Controls the behavior of editor guides.
+	*/
+	guides?: IGuidesOptions;
 }
 
 /**
@@ -657,10 +650,7 @@ export interface IEditorOptions {
  */
 export const MINIMAP_GUTTER_WIDTH = 8;
 
-/**
- * Configuration options for the diff editor.
- */
-export interface IDiffEditorOptions extends IEditorOptions {
+export interface IDiffEditorBaseOptions {
 	/**
 	 * Allow the user to resize the diff editor split view.
 	 * Defaults to true.
@@ -676,6 +666,11 @@ export interface IDiffEditorOptions extends IEditorOptions {
 	 * Defaults to 5000.
 	 */
 	maxComputationTime?: number;
+	/**
+	 * Maximum supported file size in MB.
+	 * Defaults to 50.
+	 */
+	maxFileSize?: number;
 	/**
 	 * Compute the diff by ignoring leading/trailing whitespace
 	 * Defaults to true.
@@ -697,11 +692,6 @@ export interface IDiffEditorOptions extends IEditorOptions {
 	 */
 	diffCodeLens?: boolean;
 	/**
-	 * Is the diff editor inside another editor
-	 * Defaults to false
-	 */
-	isInEmbeddedEditor?: boolean;
-	/**
 	 * Is the diff editor should render overview ruler
 	 * Defaults to true
 	 */
@@ -710,15 +700,18 @@ export interface IDiffEditorOptions extends IEditorOptions {
 	 * Control the wrapping of the diff editor.
 	 */
 	diffWordWrap?: 'off' | 'on' | 'inherit';
-	/**
-	 * Aria label for original editor.
-	 */
-	originalAriaLabel?: string;
-	/**
-	 * Aria label for modified editor.
-	 */
-	modifiedAriaLabel?: string;
 }
+
+/**
+ * Configuration options for the diff editor.
+ */
+export interface IDiffEditorOptions extends IEditorOptions, IDiffEditorBaseOptions {
+}
+
+/**
+ * @internal
+ */
+export type ValidDiffEditorBaseOptions = Readonly<Required<IDiffEditorBaseOptions>>;
 
 //#endregion
 
@@ -922,19 +915,26 @@ class EditorBooleanOption<K1 extends EditorOption> extends SimpleEditorOption<K1
 	}
 }
 
+/**
+ * @internal
+ */
+export function clampedInt<T>(value: any, defaultValue: T, minimum: number, maximum: number): number | T {
+	if (typeof value === 'undefined') {
+		return defaultValue;
+	}
+	let r = parseInt(value, 10);
+	if (isNaN(r)) {
+		return defaultValue;
+	}
+	r = Math.max(minimum, r);
+	r = Math.min(maximum, r);
+	return r | 0;
+}
+
 class EditorIntOption<K1 extends EditorOption> extends SimpleEditorOption<K1, number> {
 
 	public static clampedInt<T>(value: any, defaultValue: T, minimum: number, maximum: number): number | T {
-		if (typeof value === 'undefined') {
-			return defaultValue;
-		}
-		let r = parseInt(value, 10);
-		if (isNaN(r)) {
-			return defaultValue;
-		}
-		r = Math.max(minimum, r);
-		r = Math.min(maximum, r);
-		return r | 0;
+		return clampedInt(value, defaultValue, minimum, maximum);
 	}
 
 	public readonly minimum: number;
@@ -1152,6 +1152,9 @@ export interface IEditorCommentsOptions {
 	ignoreEmptyLines?: boolean;
 }
 
+/**
+ * @internal
+ */
 export type EditorCommentsOptions = Readonly<Required<IEditorCommentsOptions>>;
 
 class EditorComments extends BaseEditorOption<EditorOption.comments, EditorCommentsOptions> {
@@ -1382,6 +1385,9 @@ export interface IEditorFindOptions {
 	loop?: boolean;
 }
 
+/**
+ * @internal
+ */
 export type EditorFindOptions = Readonly<Required<IEditorFindOptions>>;
 
 class EditorFind extends BaseEditorOption<EditorOption.find, EditorFindOptions> {
@@ -1634,6 +1640,9 @@ export interface IGotoLocationOptions {
 	alternativeReferenceCommand?: string;
 }
 
+/**
+ * @internal
+ */
 export type GoToLocationOptions = Readonly<Required<IGotoLocationOptions>>;
 
 class EditorGoToLocation extends BaseEditorOption<EditorOption.gotoLocation, GoToLocationOptions> {
@@ -1769,6 +1778,9 @@ export interface IEditorHoverOptions {
 	sticky?: boolean;
 }
 
+/**
+ * @internal
+ */
 export type EditorHoverOptions = Readonly<Required<IEditorHoverOptions>>;
 
 class EditorHover extends BaseEditorOption<EditorOption.hover, EditorHoverOptions> {
@@ -2390,6 +2402,9 @@ export interface IEditorLightbulbOptions {
 	enabled?: boolean;
 }
 
+/**
+ * @internal
+ */
 export type EditorLightbulbOptions = Readonly<Required<IEditorLightbulbOptions>>;
 
 class EditorLightbulb extends BaseEditorOption<EditorOption.lightbulb, EditorLightbulbOptions> {
@@ -2446,6 +2461,9 @@ export interface IEditorInlayHintsOptions {
 	fontFamily?: string;
 }
 
+/**
+ * @internal
+ */
 export type EditorInlayHintsOptions = Readonly<Required<IEditorInlayHintsOptions>>;
 
 class EditorInlayHints extends BaseEditorOption<EditorOption.inlayHints, EditorInlayHintsOptions> {
@@ -2463,12 +2481,12 @@ class EditorInlayHints extends BaseEditorOption<EditorOption.inlayHints, EditorI
 				'editor.inlayHints.fontSize': {
 					type: 'number',
 					default: defaults.fontSize,
-					markdownDescription: nls.localize('inlayHints.fontSize', "Controls font size of inlay hints in the editor. When set to `0`, the 90% of `#editor.fontSize#` is used.")
+					markdownDescription: nls.localize('inlayHints.fontSize', "Controls font size of inlay hints in the editor. A default of 90% of `#editor.fontSize#` is used when the configured value is less than `5` or greater than the editor font size.")
 				},
 				'editor.inlayHints.fontFamily': {
 					type: 'string',
 					default: defaults.fontFamily,
-					description: nls.localize('inlayHints.fontFamily', "Controls font family of inlay hints in the editor. When set to empty, the `#editor.fontFamily#` is used.")
+					markdownDescription: nls.localize('inlayHints.fontFamily', "Controls font family of inlay hints in the editor. When set to empty, the `#editor.fontFamily#` is used.")
 				},
 			}
 		);
@@ -2554,6 +2572,9 @@ export interface IEditorMinimapOptions {
 	scale?: number;
 }
 
+/**
+ * @internal
+ */
 export type EditorMinimapOptions = Readonly<Required<IEditorMinimapOptions>>;
 
 class EditorMinimap extends BaseEditorOption<EditorOption.minimap, EditorMinimapOptions> {
@@ -2667,10 +2688,10 @@ export interface IEditorPaddingOptions {
 	bottom?: number;
 }
 
-export interface InternalEditorPaddingOptions {
-	readonly top: number;
-	readonly bottom: number;
-}
+/**
+ * @internal
+ */
+export type InternalEditorPaddingOptions = Readonly<Required<IEditorPaddingOptions>>;
 
 class EditorPadding extends BaseEditorOption<EditorOption.padding, InternalEditorPaddingOptions> {
 
@@ -2728,6 +2749,9 @@ export interface IEditorParameterHintOptions {
 	cycle?: boolean;
 }
 
+/**
+ * @internal
+ */
 export type InternalParameterHintOptions = Readonly<Required<IEditorParameterHintOptions>>;
 
 class EditorParameterHints extends BaseEditorOption<EditorOption.parameterHints, InternalParameterHintOptions> {
@@ -2794,6 +2818,9 @@ export interface IQuickSuggestionsOptions {
 	strings?: boolean;
 }
 
+/**
+ * @internal
+ */
 export type ValidQuickSuggestionsOptions = boolean | Readonly<Required<IQuickSuggestionsOptions>>;
 
 class EditorQuickSuggestions extends BaseEditorOption<EditorOption.quickSuggestions, ValidQuickSuggestionsOptions> {
@@ -3226,6 +3253,9 @@ export interface IInlineSuggestOptions {
 	mode?: 'prefix' | 'subword' | 'subwordSmart';
 }
 
+/**
+ * @internal
+ */
 export type InternalInlineSuggestOptions = Readonly<Required<IInlineSuggestOptions>>;
 
 /**
@@ -3245,18 +3275,7 @@ class InlineEditorSuggest extends BaseEditorOption<EditorOption.inlineSuggest, I
 					type: 'boolean',
 					default: defaults.enabled,
 					description: nls.localize('inlineSuggest.enabled', "Controls whether to automatically show inline suggestions in the editor.")
-				},
-				'editor.inlineSuggest.mode': {
-					type: 'string',
-					enum: ['prefix', 'subword', 'subwordSmart'],
-					enumDescriptions: [
-						nls.localize('inlineSuggest.mode.prefix', "Only render an inline suggestion if the replace text is a prefix of the insert text."),
-						nls.localize('inlineSuggest.mode.subword', "Only render an inline suggestion if the replace text is a subword of the insert text."),
-						nls.localize('inlineSuggest.mode.subwordSmart', "Only render an inline suggestion if the replace text is a subword of the insert text, but the subword must start after the cursor."),
-					],
-					default: defaults.mode,
-					description: nls.localize('inlineSuggest.mode', "Controls which mode to use for rendering inline suggestions.")
-				},
+				}
 			}
 		);
 	}
@@ -3284,6 +3303,9 @@ export interface IBracketPairColorizationOptions {
 	enabled?: boolean;
 }
 
+/**
+ * @internal
+ */
 export type InternalBracketPairColorizationOptions = Readonly<Required<IBracketPairColorizationOptions>>;
 
 /**
@@ -3314,6 +3336,111 @@ class BracketPairColorization extends BaseEditorOption<EditorOption.bracketPairC
 		const input = _input as IBracketPairColorizationOptions;
 		return {
 			enabled: boolean(input.enabled, this.defaultValue.enabled)
+		};
+	}
+}
+
+//#endregion
+
+//#region guides
+
+export interface IGuidesOptions {
+	/**
+	 * Enable rendering of bracket pair guides.
+	 * Defaults to 'none'.
+	*/
+	bracketPairs?: 'all' | 'active' | 'none';
+
+	/**
+	 * Enable rendering of vertical bracket pair guides.
+	 * Defaults to 'active'.
+	 */
+	bracketPairsHorizontal?: 'all' | 'active' | 'none';
+
+	/**
+	 * Enable highlighting of the active bracket pair.
+	 * Defaults to true.
+	*/
+	highlightActiveBracketPair?: boolean;
+
+	/**
+	 * Enable rendering of indent guides.
+	 * Defaults to true.
+	 */
+	indentation?: boolean;
+
+	/**
+	 * Enable highlighting of the active indent guide.
+	 * Defaults to true.
+	 */
+	highlightActiveIndentation?: boolean;
+}
+
+/**
+ * @internal
+ */
+export type InternalGuidesOptions = Readonly<Required<IGuidesOptions>>;
+
+/**
+ * Configuration options for inline suggestions
+ */
+class GuideOptions extends BaseEditorOption<EditorOption.guides, InternalGuidesOptions> {
+	constructor() {
+		const defaults: InternalGuidesOptions = {
+			bracketPairs: 'none',
+			bracketPairsHorizontal: 'active',
+			highlightActiveBracketPair: true,
+
+			indentation: true,
+			highlightActiveIndentation: true
+		};
+
+		super(
+			EditorOption.guides, 'guides', defaults,
+			{
+				'editor.guides.bracketPairs': {
+					type: 'string',
+					enum: ['all', 'active', 'none'],
+					default: defaults.bracketPairs,
+					description: nls.localize('editor.guides.bracketPairs', "Controls whether bracket pair guides are enabled or not.")
+				},
+				'editor.guides.bracketPairsHorizontal': {
+					type: 'string',
+					enum: ['all', 'active', 'none'],
+					default: defaults.bracketPairsHorizontal,
+					description: nls.localize('editor.guides.bracketPairsHorizontal', "Controls whether horizontal bracket pair guides are enabled or not.")
+				},
+				'editor.guides.highlightActiveBracketPair': {
+					type: 'boolean',
+					default: defaults.highlightActiveBracketPair,
+					description: nls.localize('editor.guides.highlightActiveBracketPair', "Controls whether bracket pair guides are enabled or not.")
+				},
+				'editor.guides.indentation': {
+					type: 'boolean',
+					default: defaults.indentation,
+					description: nls.localize('editor.guides.indentation', "Controls whether the editor should render indent guides.")
+				},
+				'editor.guides.highlightActiveIndentation': {
+					type: 'boolean',
+					default: defaults.highlightActiveIndentation,
+					description: nls.localize('editor.guides.highlightActiveIndentation', "Controls whether the editor should highlight the active indent guide.")
+				}
+			}
+		);
+	}
+
+	public validate(_input: any): InternalGuidesOptions {
+		if (!_input || typeof _input !== 'object') {
+			return this.defaultValue;
+		}
+		const input = _input as IGuidesOptions;
+		return {
+			bracketPairs: stringSet(input.bracketPairs, this.defaultValue.bracketPairs, ['all', 'active', 'none']),
+			bracketPairsHorizontal: stringSet(input.bracketPairsHorizontal, this.defaultValue.bracketPairsHorizontal, ['all', 'active', 'none']),
+			highlightActiveBracketPair: boolean(input.highlightActiveBracketPair, this.defaultValue.highlightActiveBracketPair),
+
+			indentation: boolean(input.indentation, this.defaultValue.indentation),
+			highlightActiveIndentation: boolean(input.highlightActiveIndentation, this.defaultValue.highlightActiveIndentation),
 		};
 	}
 }
@@ -3480,6 +3607,9 @@ export interface ISuggestOptions {
 	showSnippets?: boolean;
 }
 
+/**
+ * @internal
+ */
 export type InternalSuggestOptions = Readonly<Required<ISuggestOptions>>;
 
 class EditorSuggest extends BaseEditorOption<EditorOption.suggest, InternalSuggestOptions> {
@@ -3572,17 +3702,6 @@ class EditorSuggest extends BaseEditorOption<EditorOption.suggest, InternalSugge
 					type: 'boolean',
 					default: defaults.preview,
 					description: nls.localize('suggest.preview', "Controls whether to preview the suggestion outcome in the editor.")
-				},
-				'editor.suggest.previewMode': {
-					type: 'string',
-					enum: ['prefix', 'subword', 'subwordSmart'],
-					enumDescriptions: [
-						nls.localize('suggest.previewMode.prefix', "Only render a preview if the replace text is a prefix of the insert text."),
-						nls.localize('suggest.previewMode.subword', "Only render a preview if the replace text is a subword of the insert text."),
-						nls.localize('suggest.previewMode.subwordSmart', "Render a preview if the replace text is a subword of the insert text, or if it is a prefix of the insert text."),
-					],
-					default: defaults.previewMode,
-					description: nls.localize('suggest.previewMode', "Controls which mode to use for rendering the suggest preview.")
 				},
 				'editor.suggest.showInlineDetails': {
 					type: 'boolean',
@@ -3802,6 +3921,9 @@ export interface ISmartSelectOptions {
 	selectLeadingAndTrailingWhitespace?: boolean
 }
 
+/**
+ * @internal
+ */
 export type SmartSelectOptions = Readonly<Required<ISmartSelectOptions>>;
 
 class SmartSelect extends BaseEditorOption<EditorOption.smartSelect, SmartSelectOptions> {
@@ -3943,7 +4065,7 @@ export const EDITOR_MODEL_DEFAULTS = {
 	detectIndentation: true,
 	trimAutoWhitespace: true,
 	largeFileOptimizations: true,
-	bracketPairColorizationOptions: { enabled: product.quality !== 'stable' }
+	bracketPairColorizationOptions: { enabled: false }
 };
 
 /**
@@ -3970,6 +4092,7 @@ export const enum EditorOption {
 	automaticLayout,
 	autoSurround,
 	bracketPairColorization,
+	guides,
 	codeLens,
 	codeLensFontFamily,
 	codeLensFontSize,
@@ -4008,7 +4131,6 @@ export const enum EditorOption {
 	glyphMargin,
 	gotoLocation,
 	hideCursorInOverviewRuler,
-	highlightActiveIndentGuide,
 	hover,
 	inDiffEditor,
 	inlineSuggest,
@@ -4040,7 +4162,6 @@ export const enum EditorOption {
 	readOnly,
 	renameOnType,
 	renderControlCharacters,
-	renderIndentGuides,
 	renderFinalNewline,
 	renderLineHighlight,
 	renderLineHighlightOnlyWhenFocus,
@@ -4092,21 +4213,6 @@ export const enum EditorOption {
 	wrappingInfo,
 }
 
-/**
- * WORKAROUND: TS emits "any" for complex editor options values (anything except string, bool, enum, etc. ends up being "any")
- * @monacodtsreplace
- * /accessibilitySupport, any/accessibilitySupport, AccessibilitySupport/
- * /comments, any/comments, EditorCommentsOptions/
- * /find, any/find, EditorFindOptions/
- * /fontInfo, any/fontInfo, FontInfo/
- * /gotoLocation, any/gotoLocation, GoToLocationOptions/
- * /hover, any/hover, EditorHoverOptions/
- * /lightbulb, any/lightbulb, EditorLightbulbOptions/
- * /minimap, any/minimap, EditorMinimapOptions/
- * /parameterHints, any/parameterHints, InternalParameterHintOptions/
- * /quickSuggestions, any/quickSuggestions, ValidQuickSuggestionsOptions/
- * /suggest, any/suggest, InternalSuggestOptions/
- */
 export const EditorOptions = {
 	acceptSuggestionOnCommitCharacter: register(new EditorBooleanOption(
 		EditorOption.acceptSuggestionOnCommitCharacter, 'acceptSuggestionOnCommitCharacter', true,
@@ -4221,6 +4327,7 @@ export const EditorOptions = {
 		}
 	)),
 	bracketPairColorization: register(new BracketPairColorization()),
+	bracketPairGuides: register(new GuideOptions()),
 	stickyTabStops: register(new EditorBooleanOption(
 		EditorOption.stickyTabStops, 'stickyTabStops', false,
 		{ description: nls.localize('stickyTabStops', "Emulate selection behavior of tab characters when using spaces for indentation. Selection will stick to tab stops.") }
@@ -4375,10 +4482,6 @@ export const EditorOptions = {
 		EditorOption.hideCursorInOverviewRuler, 'hideCursorInOverviewRuler', false,
 		{ description: nls.localize('hideCursorInOverviewRuler', "Controls whether the cursor should be hidden in the overview ruler.") }
 	)),
-	highlightActiveIndentGuide: register(new EditorBooleanOption(
-		EditorOption.highlightActiveIndentGuide, 'highlightActiveIndentGuide', true,
-		{ description: nls.localize('highlightActiveIndentGuide', "Controls whether the editor should highlight the active indent guide.") }
-	)),
 	hover: register(new EditorHover()),
 	inDiffEditor: register(new EditorBooleanOption(
 		EditorOption.inDiffEditor, 'inDiffEditor', false
@@ -4506,10 +4609,6 @@ export const EditorOptions = {
 	renderControlCharacters: register(new EditorBooleanOption(
 		EditorOption.renderControlCharacters, 'renderControlCharacters', false,
 		{ description: nls.localize('renderControlCharacters', "Controls whether the editor should render control characters.") }
-	)),
-	renderIndentGuides: register(new EditorBooleanOption(
-		EditorOption.renderIndentGuides, 'renderIndentGuides', true,
-		{ description: nls.localize('renderIndentGuides', "Controls whether the editor should render indent guides.") }
 	)),
 	renderFinalNewline: register(new EditorBooleanOption(
 		EditorOption.renderFinalNewline, 'renderFinalNewline', true,

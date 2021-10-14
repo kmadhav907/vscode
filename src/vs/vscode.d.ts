@@ -541,7 +541,7 @@ declare module 'vscode' {
 		 * The {@link TextEditorSelectionChangeKind change kind} which has triggered this
 		 * event. Can be `undefined`.
 		 */
-		readonly kind?: TextEditorSelectionChangeKind;
+		readonly kind: TextEditorSelectionChangeKind | undefined
 	}
 
 	/**
@@ -1124,7 +1124,7 @@ declare module 'vscode' {
 		 * isn't one of the main editors, e.g. an embedded editor, or when the editor
 		 * column is larger than three.
 		 */
-		readonly viewColumn?: ViewColumn;
+		readonly viewColumn: ViewColumn | undefined;
 
 		/**
 		 * Perform an edit on the document associated with this text editor.
@@ -2227,7 +2227,7 @@ declare module 'vscode' {
 		 *
 		 * Actions not of this kind are filtered out before being shown by the [lightbulb](https://code.visualstudio.com/docs/editor/editingevolved#_code-action).
 		 */
-		readonly only?: CodeActionKind;
+		readonly only: CodeActionKind | undefined;
 	}
 
 	/**
@@ -2589,6 +2589,18 @@ declare module 'vscode' {
 		 * Indicates that this markdown string can contain {@link ThemeIcon ThemeIcons}, e.g. `$(zap)`.
 		 */
 		supportThemeIcons?: boolean;
+
+		/**
+		 * Indicates that this markdown string can contain raw html tags. Defaults to false.
+		 *
+		 * When `supportHtml` is false, the markdown renderer will strip out any raw html tags
+		 * that appear in the markdown text. This means you can only use markdown syntax for rendering.
+		 *
+		 * When `supportHtml` is true, the markdown render will also allow a safe subset of html tags
+		 * and attributes to be rendered. See https://github.com/microsoft/vscode/blob/6d2920473c6f13759c978dd89104c4270a83422d/src/vs/base/browser/markdownRenderer.ts#L296
+		 * for a list of all supported tags and attributes.
+		 */
+		supportHtml?: boolean;
 
 		/**
 		 * Creates a new markdown string with the given value.
@@ -3918,7 +3930,7 @@ declare module 'vscode' {
 		 * This is `undefined` when signature help is not triggered by typing, such as when manually invoking
 		 * signature help or when moving the cursor.
 		 */
-		readonly triggerCharacter?: string;
+		readonly triggerCharacter: string | undefined;
 
 		/**
 		 * `true` if signature help was already showing when it was triggered.
@@ -3934,7 +3946,7 @@ declare module 'vscode' {
 		 * The `activeSignatureHelp` has its [`SignatureHelp.activeSignature`] field updated based on
 		 * the user arrowing through available signatures.
 		 */
-		readonly activeSignatureHelp?: SignatureHelp;
+		readonly activeSignatureHelp: SignatureHelp | undefined;
 	}
 
 	/**
@@ -4250,11 +4262,11 @@ declare module 'vscode' {
 		/**
 		 * Character that triggered the completion item provider.
 		 *
-		 * `undefined` if provider was not triggered by a character.
+		 * `undefined` if the provider was not triggered by a character.
 		 *
 		 * The trigger character is already in the document when the completion provider is triggered.
 		 */
-		readonly triggerCharacter?: string;
+		readonly triggerCharacter: string | undefined;
 	}
 
 	/**
@@ -4737,8 +4749,8 @@ declare module 'vscode' {
 		 * @param document The document in which the command was invoked.
 		 * @param position The position at which the command was invoked.
 		 * @param token A cancellation token.
-		 * @returns A call hierarchy item or a thenable that resolves to such. The lack of a result can be
-		 * signaled by returning `undefined` or `null`.
+		 * @returns One or multiple call hierarchy items or a thenable that resolves to such. The lack of a result can be
+		 * signaled by returning `undefined`, `null`, or an empty array.
 		 */
 		prepareCallHierarchy(document: TextDocument, position: Position, token: CancellationToken): ProviderResult<CallHierarchyItem | CallHierarchyItem[]>;
 
@@ -4765,6 +4777,104 @@ declare module 'vscode' {
 		 * signaled by returning `undefined` or `null`.
 		 */
 		provideCallHierarchyOutgoingCalls(item: CallHierarchyItem, token: CancellationToken): ProviderResult<CallHierarchyOutgoingCall[]>;
+	}
+
+	/**
+	 * Represents an item of a type hierarchy, like a class or an interface.
+	 */
+	export class TypeHierarchyItem {
+		/**
+		 * The name of this item.
+		 */
+		name: string;
+
+		/**
+		 * The kind of this item.
+		 */
+		kind: SymbolKind;
+
+		/**
+		 * Tags for this item.
+		 */
+		tags?: ReadonlyArray<SymbolTag>;
+
+		/**
+		 * More detail for this item, e.g. the signature of a function.
+		 */
+		detail?: string;
+
+		/**
+		 * The resource identifier of this item.
+		 */
+		uri: Uri;
+
+		/**
+		 * The range enclosing this symbol not including leading/trailing whitespace
+		 * but everything else, e.g. comments and code.
+		 */
+		range: Range;
+
+		/**
+		 * The range that should be selected and revealed when this symbol is being
+		 * picked, e.g. the name of a class. Must be contained by the {@link TypeHierarchyItem.range range}-property.
+		 */
+		selectionRange: Range;
+
+		/**
+		 * Creates a new type hierarchy item.
+		 *
+		 * @param kind The kind of the item.
+		 * @param name The name of the item.
+		 * @param detail The details of the item.
+		 * @param uri The Uri of the item.
+		 * @param range The whole range of the item.
+		 * @param selectionRange The selection range of the item.
+		 */
+		constructor(kind: SymbolKind, name: string, detail: string, uri: Uri, range: Range, selectionRange: Range);
+	}
+
+	/**
+	 * The type hierarchy provider interface describes the contract between extensions
+	 * and the type hierarchy feature.
+	 */
+	export interface TypeHierarchyProvider {
+
+		/**
+		 * Bootstraps type hierarchy by returning the item that is denoted by the given document
+		 * and position. This item will be used as entry into the type graph. Providers should
+		 * return `undefined` or `null` when there is no item at the given location.
+		 *
+		 * @param document The document in which the command was invoked.
+		 * @param position The position at which the command was invoked.
+		 * @param token A cancellation token.
+		 * @returns One or multiple type hierarchy items or a thenable that resolves to such. The lack of a result can be
+		 * signaled by returning `undefined`, `null`, or an empty array.
+		 */
+		prepareTypeHierarchy(document: TextDocument, position: Position, token: CancellationToken): ProviderResult<TypeHierarchyItem | TypeHierarchyItem[]>;
+
+		/**
+		 * Provide all supertypes for an item, e.g all types from which a type is derived/inherited. In graph terms this describes directed
+		 * and annotated edges inside the type graph, e.g the given item is the starting node and the result is the nodes
+		 * that can be reached.
+		 *
+		 * @param item The hierarchy item for which super types should be computed.
+		 * @param token A cancellation token.
+		 * @returns A set of direct supertypes or a thenable that resolves to such. The lack of a result can be
+		 * signaled by returning `undefined` or `null`.
+		 */
+		provideTypeHierarchySupertypes(item: TypeHierarchyItem, token: CancellationToken): ProviderResult<TypeHierarchyItem[]>;
+
+		/**
+		 * Provide all subtypes for an item, e.g all types which are derived/inherited from the given item. In
+		 * graph terms this describes directed and annotated edges inside the type graph, e.g the given item is the starting
+		 * node and the result is the nodes that can be reached.
+		 *
+		 * @param item The hierarchy item for which subtypes should be computed.
+		 * @param token A cancellation token.
+		 * @returns A set of direct subtypes or a thenable that resolves to such. The lack of a result can be
+		 * signaled by returning `undefined` or `null`.
+		 */
+		provideTypeHierarchySubtypes(item: TypeHierarchyItem, token: CancellationToken): ProviderResult<TypeHierarchyItem[]>;
 	}
 
 	/**
@@ -5761,6 +5871,11 @@ declare module 'vscode' {
 		readonly exitStatus: TerminalExitStatus | undefined;
 
 		/**
+		 * The current state of the {@link Terminal}.
+		 */
+		readonly state: TerminalState;
+
+		/**
 		 * Send text to the terminal. The text is written to the stdin of the underlying pty process
 		 * (shell) of the terminal.
 		 *
@@ -5787,6 +5902,27 @@ declare module 'vscode' {
 		 * Dispose and free associated resources.
 		 */
 		dispose(): void;
+	}
+
+	/**
+	 * Represents the state of a {@link Terminal}.
+	 */
+	export interface TerminalState {
+		/**
+		 * Whether the {@link Terminal} has been interacted with. Interaction means that the
+		 * terminal has sent data to the process which depending on the terminal's _mode_. By
+		 * default input is sent when a key is pressed or when a command or extension sends text,
+		 * but based on the terminal's mode it can also happen on:
+		 *
+		 * - a pointer click event
+		 * - a pointer scroll event
+		 * - a pointer move event
+		 * - terminal focus in/out
+		 *
+		 * For more information on events that can send data see "DEC Private Mode Set (DECSET)" on
+		 * https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+		 */
+		readonly isInteractedWith: boolean;
 	}
 
 	/**
@@ -6243,6 +6379,9 @@ declare module 'vscode' {
 
 		/**
 		 * Store a value. The value must be JSON-stringifyable.
+		 *
+		 * *Note* that using `undefined` as value removes the key from the underlying
+		 * storage.
 		 *
 		 * @param key A string.
 		 * @param value A value. MUST not contain cyclic references.
@@ -7025,6 +7164,18 @@ declare module 'vscode' {
 		SymbolicLink = 64
 	}
 
+	export enum FilePermission {
+		/**
+		 * The file is readonly.
+		 *
+		 * *Note:* All `FileStat` from a `FileSystemProvider` that is registered with
+		 * the option `isReadonly: true` will be implicitly handled as if `FilePermission.Readonly`
+		 * is set. As a consequence, it is not possible to have a readonly file system provider
+		 * registered where some `FileStat` are not readonly.
+		 */
+		Readonly = 1
+	}
+
 	/**
 	 * The `FileStat`-type represents metadata about a file
 	 */
@@ -7056,6 +7207,12 @@ declare module 'vscode' {
 		 * example.
 		 */
 		size: number;
+		/**
+		 * The permissions of the file, e.g. whether the file is readonly.
+		 *
+		 * *Note:* This value might be a bitmask, e.g. `FilePermission.Readonly | FilePermission.Other`.
+		 */
+		permissions?: FilePermission;
 	}
 
 	/**
@@ -7409,6 +7566,14 @@ declare module 'vscode' {
 		readonly enableScripts?: boolean;
 
 		/**
+		 * Controls whether forms are enabled in the webview content or not.
+		 *
+		 * Defaults to true if {@link enableScripts scripts are enabled}. Otherwise defaults to false.
+		 * Explicitly setting this property to either true or false overrides the default.
+		 */
+		readonly enableForms?: boolean;
+
+		/**
 		 * Controls whether command uris are enabled in webview content or not.
 		 *
 		 * Defaults to false.
@@ -7537,7 +7702,7 @@ declare module 'vscode' {
 		/**
 		 * Controls if the find widget is enabled in the panel.
 		 *
-		 * Defaults to false.
+		 * Defaults to `false`.
 		 */
 		readonly enableFindWidget?: boolean;
 
@@ -7593,7 +7758,7 @@ declare module 'vscode' {
 		 * Editor position of the panel. This property is only set if the webview is in
 		 * one of the editor view columns.
 		 */
-		readonly viewColumn?: ViewColumn;
+		readonly viewColumn: ViewColumn | undefined;
 
 		/**
 		 * Whether the panel is active (focused by the user).
@@ -7971,14 +8136,14 @@ declare module 'vscode' {
 		 * If this is provided, your extension should restore the editor from the backup instead of reading the file
 		 * from the user's workspace.
 		 */
-		readonly backupId?: string;
+		readonly backupId: string | undefined
 
 		/**
 		 * If the URI is an untitled file, this will be populated with the byte data of that file
 		 *
 		 * If this is provided, your extension should utilize this byte data rather than executing fs APIs on the URI passed in
 		 */
-		readonly untitledDocumentData?: Uint8Array;
+		readonly untitledDocumentData: Uint8Array | undefined
 	}
 
 	/**
@@ -8192,6 +8357,14 @@ declare module 'vscode' {
 		export const appRoot: string;
 
 		/**
+		 * The hosted location of the application
+		 * On desktop this is 'desktop'
+		 * In the web this is the specified embedder i.e. 'github.dev', 'codespaces', or 'web' if the embedder
+		 * does not provide that information
+		 */
+		export const appHost: string;
+
+		/**
 		 * The custom uri scheme the editor registers to in the operating system.
 		 */
 		export const uriScheme: string;
@@ -8318,7 +8491,7 @@ declare module 'vscode' {
 		 * ```
 		 *
 		 * *Note* that extensions should not cache the result of `asExternalUri` as the resolved uri may become invalid due to
-		 * a system or user action — for example, in remote cases, a user may close a port forwarding tunnel that was opened by
+		 * a system or user action — for example, in remote cases, a user may close a port forwarding tunnel that was opened by
 		 * `asExternalUri`.
 		 *
 		 * #### Any other scheme
@@ -8532,6 +8705,11 @@ declare module 'vscode' {
 		 * An {@link Event} which fires when a terminal is disposed.
 		 */
 		export const onDidCloseTerminal: Event<Terminal>;
+
+		/**
+		 * An {@link Event} which fires when a {@link Terminal.state terminal's state} has changed.
+		 */
+		export const onDidChangeTerminalState: Event<Terminal>;
 
 		/**
 		 * Represents the current window's state.
@@ -9261,7 +9439,7 @@ declare module 'vscode' {
 		 * Get {@link TreeItem} representation of the `element`
 		 *
 		 * @param element The element for which {@link TreeItem} representation is asked for.
-		 * @return {@link TreeItem} representation of the element
+		 * @return TreeItem representation of the element.
 		 */
 		getTreeItem(element: T): TreeItem | Thenable<TreeItem>;
 
@@ -10000,7 +10178,8 @@ declare module 'vscode' {
 		buttons: readonly QuickInputButton[];
 
 		/**
-		 * An event signaling when a button was triggered.
+		 * An event signaling when a button in the title bar was triggered.
+		 * This event does not fire for buttons on a {@link QuickPickItem}.
 		 */
 		readonly onDidTriggerButton: Event<QuickInputButton>;
 
@@ -10182,9 +10361,9 @@ declare module 'vscode' {
 
 		/**
 		 * The reason why the document was changed.
-		 * Is undefined if the reason is not known.
+		 * Is `undefined` if the reason is not known.
 		*/
-		readonly reason?: TextDocumentChangeReason;
+		readonly reason: TextDocumentChangeReason | undefined;
 	}
 
 	/**
@@ -10942,7 +11121,7 @@ declare module 'vscode' {
 		 * @param scope A scope for which the configuration is asked for.
 		 * @return The full configuration or a subset.
 		 */
-		export function getConfiguration(section?: string | undefined, scope?: ConfigurationScope | null): WorkspaceConfiguration;
+		export function getConfiguration(section?: string, scope?: ConfigurationScope | null): WorkspaceConfiguration;
 
 		/**
 		 * An event that is emitted when the {@link WorkspaceConfiguration configuration} changed.
@@ -11489,6 +11668,15 @@ declare module 'vscode' {
 		export function registerCallHierarchyProvider(selector: DocumentSelector, provider: CallHierarchyProvider): Disposable;
 
 		/**
+		 * Register a type hierarchy provider.
+		 *
+		 * @param selector A selector that defines the documents this provider is applicable to.
+		 * @param provider A type hierarchy provider.
+		 * @return A {@link Disposable} that unregisters this provider when being disposed.
+		 */
+		export function registerTypeHierarchyProvider(selector: DocumentSelector, provider: TypeHierarchyProvider): Disposable;
+
+		/**
 		 * Register a linked editing range provider.
 		 *
 		 * Multiple providers can be registered for a language. In that case providers are sorted
@@ -11562,7 +11750,7 @@ declare module 'vscode' {
 		/**
 		 * The metadata of this cell. Can be anything but must be JSON-stringifyable.
 		 */
-		readonly metadata: { [key: string]: any }
+		readonly metadata: { [key: string]: any };
 
 		/**
 		 * The outputs of this cell.
@@ -11572,7 +11760,7 @@ declare module 'vscode' {
 		/**
 		 * The most recent {@link NotebookCellExecutionSummary execution summary} for this cell.
 		 */
-		readonly executionSummary?: NotebookCellExecutionSummary;
+		readonly executionSummary: NotebookCellExecutionSummary | undefined;
 	}
 
 	/**
@@ -12728,7 +12916,7 @@ declare module 'vscode' {
 		/**
 		 * Event specific information.
 		 */
-		readonly body?: any;
+		readonly body: any | undefined;
 	}
 
 	/**
@@ -13300,15 +13488,7 @@ declare module 'vscode' {
 		 * @param extensionId An extension identifier.
 		 * @return An extension or `undefined`.
 		 */
-		export function getExtension(extensionId: string): Extension<any> | undefined;
-
-		/**
-		 * Get an extension by its full identifier in the form of: `publisher.name`.
-		 *
-		 * @param extensionId An extension identifier.
-		 * @return An extension or `undefined`.
-		 */
-		export function getExtension<T>(extensionId: string): Extension<T> | undefined;
+		export function getExtension<T = any>(extensionId: string): Extension<T> | undefined;
 
 		/**
 		 * All extensions currently known to the system.
@@ -13452,7 +13632,7 @@ declare module 'vscode' {
 		readonly count: number;
 
 		/**
-		 * Whether the [author](CommentAuthorInformation) of the comment has reacted to this reaction
+		 * Whether the {@link CommentAuthorInformation author} of the comment has reacted to this reaction
 		 */
 		readonly authorHasReacted: boolean;
 	}
@@ -13725,21 +13905,21 @@ declare module 'vscode' {
 	*/
 	export interface AuthenticationProviderAuthenticationSessionsChangeEvent {
 		/**
-		 * The {@link AuthenticationSession}s of the {@link AuthenticationProvider} that have been added.
+		 * The {@link AuthenticationSession AuthenticationSessions} of the {@link AuthenticationProvider} that have been added.
 		*/
-		readonly added?: readonly AuthenticationSession[];
+		readonly added: readonly AuthenticationSession[] | undefined
 
 		/**
-		 * The {@link AuthenticationSession}s of the {@link AuthenticationProvider} that have been removed.
+		 * The {@link AuthenticationSession AuthenticationSessions} of the {@link AuthenticationProvider} that have been removed.
 		 */
-		readonly removed?: readonly AuthenticationSession[];
+		readonly removed: readonly AuthenticationSession[] | undefined
 
 		/**
-		 * The {@link AuthenticationSession}s of the {@link AuthenticationProvider} that have been changed.
+		 * The {@link AuthenticationSession AuthenticationSessions} of the {@link AuthenticationProvider} that have been changed.
 		 * A session changes when its data excluding the id are updated. An example of this is a session refresh that results in a new
 		 * access token being set for the session.
 		 */
-		readonly changed?: readonly AuthenticationSession[];
+		readonly changed: readonly AuthenticationSession[] | undefined;
 	}
 
 	/**
@@ -13801,7 +13981,7 @@ declare module 'vscode' {
 		 * to the editor that implement GitHub and Microsoft authentication: their providerId's are 'github' and 'microsoft'.
 		 * @param providerId The id of the provider to use
 		 * @param scopes A list of scopes representing the permissions requested. These are dependent on the authentication provider
-		 * @param options The {@link GetSessionOptions} to use
+		 * @param options The {@link AuthenticationGetSessionOptions} to use
 		 * @returns A thenable that resolves to an authentication session
 		 */
 		export function getSession(providerId: string, scopes: readonly string[], options: AuthenticationGetSessionOptions & { createIfNone: true }): Thenable<AuthenticationSession>;
@@ -13816,7 +13996,7 @@ declare module 'vscode' {
 		 * to the editor that implement GitHub and Microsoft authentication: their providerId's are 'github' and 'microsoft'.
 		 * @param providerId The id of the provider to use
 		 * @param scopes A list of scopes representing the permissions requested. These are dependent on the authentication provider
-		 * @param options The {@link GetSessionOptions} to use
+		 * @param options The {@link AuthenticationGetSessionOptions} to use
 		 * @returns A thenable that resolves to an authentication session if available, or undefined if there are no sessions
 		 */
 		export function getSession(providerId: string, scopes: readonly string[], options?: AuthenticationGetSessionOptions): Thenable<AuthenticationSession | undefined>;
@@ -13869,6 +14049,25 @@ declare module 'vscode' {
 	}
 
 	/**
+	 * Tags can be associated with {@link TestItem TestItems} and
+	 * {@link TestRunProfile TestRunProfiles}. A profile with a tag can only
+	 * execute tests that include that tag in their {@link TestItem.tags} array.
+	 */
+	export class TestTag {
+		/**
+		 * ID of the test tag. `TestTag` instances with the same ID are considered
+		 * to be identical.
+		 */
+		readonly id: string;
+
+		/**
+		 * Creates a new TestTag instance.
+		 * @param id ID of the test tag.
+		 */
+		constructor(id: string);
+	}
+
+	/**
 	 * A TestRunProfile describes one way to execute tests in a {@link TestController}.
 	 */
 	export interface TestRunProfile {
@@ -13897,6 +14096,12 @@ declare module 'vscode' {
 		 * user can configure this.
 		 */
 		isDefault: boolean;
+
+		/**
+		 * Associated tag for the profile. If this is set, only {@link TestItem}
+		 * instances with the same tag will be eligible to execute in this profile.
+		 */
+		tag?: TestTag;
 
 		/**
 		 * If this method is present, a configuration gear will be present in the
@@ -13965,10 +14170,11 @@ declare module 'vscode' {
 		 * @param kind Configures what kind of execution this profile manages.
 		 * @param runHandler Function called to start a test run.
 		 * @param isDefault Whether this is the default action for its kind.
+		 * @param tag Profile test tag.
 		 * @returns An instance of a {@link TestRunProfile}, which is automatically
 		 * associated with this controller.
 		 */
-		createRunProfile(label: string, kind: TestRunProfileKind, runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void, isDefault?: boolean): TestRunProfile;
+		createRunProfile(label: string, kind: TestRunProfileKind, runHandler: (request: TestRunRequest, token: CancellationToken) => Thenable<void> | void, isDefault?: boolean, tag?: TestTag): TestRunProfile;
 
 		/**
 		 * A function provided by the extension that the editor may call to request
@@ -14151,8 +14357,11 @@ declare module 'vscode' {
 		 * such as colors and text styles, are supported.
 		 *
 		 * @param output Output text to append.
+		 * @param location Indicate that the output was logged at the given
+		 * location.
+		 * @param test Test item to associate the output with.
 		 */
-		appendOutput(output: string): void;
+		appendOutput(output: string, location?: Location, test?: TestItem): void;
 
 		/**
 		 * Signals that the end of the test run. Any tests included in the run whose
@@ -14238,6 +14447,12 @@ declare module 'vscode' {
 		 * aren't yet included in another item's {@link children}.
 		 */
 		readonly parent?: TestItem;
+
+		/**
+		 * Tags associated with this test item. May be used in combination with
+		 * {@link TestRunProfile.tags}, or simply as an organizational feature.
+		 */
+		tags: readonly TestTag[];
 
 		/**
 		 * Indicates whether this test item may have children discovered by resolving.

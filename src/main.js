@@ -89,7 +89,7 @@ registerListeners();
  * Support user defined locale: load it early before app('ready')
  * to have more things running in parallel.
  *
- * @type {Promise<NLSConfiguration> | undefined}
+ * @type {Promise<NLSConfiguration> | undefined}
  */
 let nlsConfigurationPromise = undefined;
 
@@ -396,23 +396,14 @@ function configureCrashReporter() {
 	// Start crash reporter for all processes
 	const productName = (product.crashReporter ? product.crashReporter.productName : undefined) || product.nameShort;
 	const companyName = (product.crashReporter ? product.crashReporter.companyName : undefined) || 'Microsoft';
-	if (process.env['VSCODE_DEV']) {
-		crashReporter.start({
-			companyName: companyName,
-			productName: `${productName} Dev`,
-			submitURL,
-			uploadToServer: false,
-			compress: true
-		});
-	} else {
-		crashReporter.start({
-			companyName: companyName,
-			productName: productName,
-			submitURL,
-			uploadToServer: !crashReporterDirectory,
-			compress: true
-		});
-	}
+	const uploadToServer = !process.env['VSCODE_DEV'] && submitURL && !crashReporterDirectory;
+	crashReporter.start({
+		companyName,
+		productName: process.env['VSCODE_DEV'] ? `${productName} Dev` : productName,
+		submitURL,
+		uploadToServer,
+		compress: true
+	});
 }
 
 /**
@@ -532,7 +523,7 @@ function mkdirp(dir) {
 }
 
 /**
- * @param {string | undefined} dir
+ * @param {string | undefined} dir
  * @returns {Promise<string | undefined>}
  */
 async function mkdirpIgnoreError(dir) {

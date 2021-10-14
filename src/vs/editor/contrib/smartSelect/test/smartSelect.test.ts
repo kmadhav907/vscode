@@ -3,25 +3,26 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 import * as assert from 'assert';
+import { CancellationToken } from 'vs/base/common/cancellation';
 import { URI } from 'vs/base/common/uri';
-import { Range, IRange } from 'vs/editor/common/core/range';
 import { Position } from 'vs/editor/common/core/position';
+import { IRange, Range } from 'vs/editor/common/core/range';
 import { LanguageIdentifier, SelectionRangeProvider, SelectionRangeRegistry } from 'vs/editor/common/modes';
-import { MockMode, StaticLanguageSelector } from 'vs/editor/test/common/mocks/mockMode';
 import { LanguageConfigurationRegistry } from 'vs/editor/common/modes/languageConfigurationRegistry';
 import { ModelServiceImpl } from 'vs/editor/common/services/modelServiceImpl';
-import { TestConfigurationService } from 'vs/platform/configuration/test/common/testConfigurationService';
-import { javascriptOnEnterRules } from 'vs/editor/test/common/modes/supports/javascriptOnEnterRules';
 import { BracketSelectionRangeProvider } from 'vs/editor/contrib/smartSelect/bracketSelections';
 import { provideSelectionRanges } from 'vs/editor/contrib/smartSelect/smartSelect';
-import { CancellationToken } from 'vs/base/common/cancellation';
 import { WordSelectionRangeProvider } from 'vs/editor/contrib/smartSelect/wordSelections';
+import { MockMode, StaticLanguageSelector } from 'vs/editor/test/common/mocks/mockMode';
+import { javascriptOnEnterRules } from 'vs/editor/test/common/modes/supports/javascriptOnEnterRules';
+import { TestLanguageConfigurationService } from 'vs/editor/test/common/modes/testLanguageConfigurationService';
 import { TestTextResourcePropertiesService } from 'vs/editor/test/common/services/testTextResourcePropertiesService';
-import { TestThemeService } from 'vs/platform/theme/test/common/testThemeService';
-import { NullLogService } from 'vs/platform/log/common/log';
-import { UndoRedoService } from 'vs/platform/undoRedo/common/undoRedoService';
+import { TestConfigurationService } from 'vs/platform/configuration/test/common/testConfigurationService';
 import { TestDialogService } from 'vs/platform/dialogs/test/common/testDialogService';
+import { NullLogService } from 'vs/platform/log/common/log';
 import { TestNotificationService } from 'vs/platform/notification/test/common/testNotificationService';
+import { TestThemeService } from 'vs/platform/theme/test/common/testThemeService';
+import { UndoRedoService } from 'vs/platform/undoRedo/common/undoRedoService';
 
 class MockJSMode extends MockMode {
 
@@ -61,7 +62,7 @@ suite('SmartSelect', () => {
 	setup(() => {
 		const configurationService = new TestConfigurationService();
 		const dialogService = new TestDialogService();
-		modelService = new ModelServiceImpl(configurationService, new TestTextResourcePropertiesService(configurationService), new TestThemeService(), new NullLogService(), new UndoRedoService(dialogService, new TestNotificationService()));
+		modelService = new ModelServiceImpl(configurationService, new TestTextResourcePropertiesService(configurationService), new TestThemeService(), new NullLogService(), new UndoRedoService(dialogService, new TestNotificationService()), new TestLanguageConfigurationService());
 		mode = new MockJSMode();
 	});
 

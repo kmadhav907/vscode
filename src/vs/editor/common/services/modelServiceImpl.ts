@@ -31,6 +31,7 @@ import { Schemas } from 'vs/base/common/network';
 import { SemanticTokensProviderStyling, toMultilineTokens2 } from 'vs/editor/common/services/semanticTokensProviderStyling';
 import { getDocumentSemanticTokens, isSemanticTokens, isSemanticTokensEdits } from 'vs/editor/common/services/getSemanticTokens';
 import { equals } from 'vs/base/common/objects';
+import { ILanguageConfigurationService } from 'vs/editor/common/modes/languageConfigurationRegistry';
 
 export interface IEditorSemanticHighlightingOptions {
 	enabled: true | false | 'configuredByTheme';
@@ -130,16 +131,6 @@ class DisposedModelInfo {
 	) { }
 }
 
-function schemaShouldMaintainUndoRedoElements(resource: URI) {
-	return (
-		resource.scheme === Schemas.file
-		|| resource.scheme === Schemas.vscodeRemote
-		|| resource.scheme === Schemas.userData
-		|| resource.scheme === Schemas.vscodeNotebookCell
-		|| resource.scheme === 'fake-fs' // for tests
-	);
-}
-
 export class ModelServiceImpl extends Disposable implements IModelService {
 
 	public static MAX_MEMORY_FOR_CLOSED_FILES_UNDO_STACK = 20 * 1024 * 1024;
@@ -171,6 +162,7 @@ export class ModelServiceImpl extends Disposable implements IModelService {
 		@IThemeService private readonly _themeService: IThemeService,
 		@ILogService private readonly _logService: ILogService,
 		@IUndoRedoService private readonly _undoRedoService: IUndoRedoService,
+		@ILanguageConfigurationService private readonly _languageConfigurationService: ILanguageConfigurationService
 	) {
 		super();
 		this._modelCreationOptionsByLanguageAndResource = Object.create(null);
@@ -375,7 +367,14 @@ export class ModelServiceImpl extends Disposable implements IModelService {
 	private _createModelData(value: string | ITextBufferFactory, languageIdentifier: LanguageIdentifier, resource: URI | undefined, isForSimpleWidget: boolean): ModelData {
 		// create & save the model
 		const options = this.getCreationOptions(languageIdentifier.language, resource, isForSimpleWidget);
-		const model: TextModel = new TextModel(value, options, languageIdentifier, resource, this._undoRedoService);
+		const model: TextModel = new TextModel(
+			value,
+			options,
+			languageIdentifier,
+			resource,
+			this._undoRedoService,
+			this._languageConfigurationService
+		);
 		if (resource && this._disposedModels.has(MODEL_ID(resource))) {
 			const disposedModelData = this._removeDisposedModel(resource)!;
 			const elements = this._undoRedoService.getElements(resource);
@@ -555,6 +554,16 @@ export class ModelServiceImpl extends Disposable implements IModelService {
 
 	// --- end IModelService
 
+	protected _schemaShouldMaintainUndoRedoElements(resource: URI) {
+		return (
+			resource.scheme === Schemas.file
+			|| resource.scheme === Schemas.vscodeRemote
+			|| resource.scheme === Schemas.userData
+			|| resource.scheme === Schemas.vscodeNotebookCell
+			|| resource.scheme === 'fake-fs' // for tests
+		);
+	}
+
 	private _onWillDispose(model: ITextModel): void {
 		const modelId = MODEL_ID(model.uri);
 		const modelData = this._models[modelId];
@@ -562,7 +571,7 @@ export class ModelServiceImpl extends Disposable implements IModelService {
 		const sharesUndoRedoStack = (this._undoRedoService.getUriComparisonKey(model.uri) !== model.uri.toString());
 		let maintainUndoRedoStack = false;
 		let heapSize = 0;
-		if (sharesUndoRedoStack || (this._shouldRestoreUndoStack() && schemaShouldMaintainUndoRedoElements(model.uri))) {
+		if (sharesUndoRedoStack || (this._shouldRestoreUndoStack() && this._schemaShouldMaintainUndoRedoElements(model.uri))) {
 			const elements = this._undoRedoService.getElements(model.uri);
 			if (elements.past.length > 0 || elements.future.length > 0) {
 				for (const element of elements.past) {

@@ -98,7 +98,17 @@ export class IFrameWebview extends Disposable implements Webview {
 	protected get element(): HTMLIFrameElement | undefined { return this._element; }
 
 	private _focused: boolean | undefined;
-	public get isFocused(): boolean { return !!this._focused; }
+	public get isFocused(): boolean {
+		if (!this._focused) {
+			return false;
+		}
+		if (document.activeElement && document.activeElement !== this.element) {
+			// looks like https://github.com/microsoft/vscode/issues/132641
+			// where the focus is actually not in the `<iframe>`
+			return false;
+		}
+		return true;
+	}
 
 	private _state: WebviewState.State = new WebviewState.Initializing([]);
 
@@ -292,6 +302,11 @@ export class IFrameWebview extends Disposable implements Webview {
 
 		this._register(addDisposableListener(window, 'message', e => {
 			if (e?.data?.target === this.id) {
+				if (e.origin !== this.webviewContentOrigin) {
+					console.log(`Skipped renderer receiving message due to mismatched origins: ${e.origin} ${this.webviewContentOrigin}`);
+					return;
+				}
+
 				const handlers = this._messageHandlers.get(e.data.channel);
 				handlers?.forEach(handler => handler(e.data.data));
 			}
@@ -388,6 +403,7 @@ export class IFrameWebview extends Disposable implements Webview {
 			extensionId: extension?.id.value ?? '',
 			platform: this.platform,
 			'vscode-resource-base-authority': webviewRootResourceAuthority,
+			parentOrigin: window.origin,
 		};
 
 		if (options.purpose) {
@@ -415,9 +431,19 @@ export class IFrameWebview extends Disposable implements Webview {
 		return endpoint;
 	}
 
+	private _webviewContentOrigin?: string;
+
+	private get webviewContentOrigin(): string {
+		if (!this._webviewContentOrigin) {
+			const uri = URI.parse(this.webviewContentEndpoint);
+			this._webviewContentOrigin = uri.scheme + '://' + uri.authority.toLowerCase();
+		}
+		return this._webviewContentOrigin;
+	}
+
 	private doPostMessage(channel: string, data?: any): void {
 		if (this.element) {
-			this.element.contentWindow!.postMessage({ channel, args: data }, '*');
+			this.element.contentWindow!.postMessage({ channel, args: data }, this.webviewContentEndpoint);
 		}
 	}
 
@@ -539,9 +565,14 @@ export class IFrameWebview extends Disposable implements Webview {
 
 		this.content = newContent;
 
+		const allowScripts = !!this.content.options.allowScripts;
 		this._send('content', {
 			contents: this.content.html,
-			options: this.content.options,
+			options: {
+				allowMultipleAPIAcquire: !!this.content.options.allowMultipleAPIAcquire,
+				allowScripts: allowScripts,
+				allowForms: this.content.options.allowForms ?? allowScripts, // For back compat, we allow forms by default when scripts are enabled
+			},
 			state: this.content.state,
 			cspSource: webviewGenericCspSource,
 			confirmBeforeClose: this._confirmBeforeClose,

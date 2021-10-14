@@ -88,7 +88,6 @@ suite('UserDataSyncStoreService', () => {
 		assert.strictEqual(target.requestsWithAllHeaders.length, 1);
 		assert.strictEqual(target.requestsWithAllHeaders[0].headers!['X-Client-Name'], `${productService.applicationName}${isWeb ? '-web' : ''}`);
 		assert.strictEqual(target.requestsWithAllHeaders[0].headers!['X-Client-Version'], productService.version);
-		assert.notStrictEqual(target.requestsWithAllHeaders[0].headers!['X-Machine-Id'], undefined);
 		assert.notStrictEqual(target.requestsWithAllHeaders[0].headers!['X-Machine-Session-Id'], undefined);
 		assert.strictEqual(target.requestsWithAllHeaders[0].headers!['X-User-Session-Id'], undefined);
 	});
@@ -479,16 +478,16 @@ suite('UserDataSyncRequestsSession', () => {
 	});
 
 	test('requests are handled after session is expired', async () => {
-		const testObject = new RequestsSession(1, 500, requestService, new NullLogService());
+		const testObject = new RequestsSession(1, 100, requestService, new NullLogService());
 		await testObject.request('url', {}, CancellationToken.None);
-		await timeout(600);
+		await timeout(125);
 		await testObject.request('url', {}, CancellationToken.None);
 	});
 
 	test('too many requests are thrown after session is expired', async () => {
-		const testObject = new RequestsSession(1, 500, requestService, new NullLogService());
+		const testObject = new RequestsSession(1, 100, requestService, new NullLogService());
 		await testObject.request('url', {}, CancellationToken.None);
-		await timeout(600);
+		await timeout(125);
 		await testObject.request('url', {}, CancellationToken.None);
 
 		try {

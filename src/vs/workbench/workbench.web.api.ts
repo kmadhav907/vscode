@@ -37,6 +37,21 @@ interface IExternalUriResolver {
 	(uri: URI): Promise<URI>;
 }
 
+/**
+ * External URL opener
+ */
+interface IExternalURLOpener {
+
+	/**
+	 * Overrides the behavior when an external URL is about to be opened.
+	 * Returning false means that the URL wasn't handled, and the default
+	 * handling behavior should be used: `window.open(href, '_blank', 'noopener');`
+	 *
+	 * @returns true if URL was handled, false otherwise.
+	 */
+	openExternal(href: string): boolean | Promise<boolean>;
+}
+
 interface ITunnelProvider {
 
 	/**
@@ -70,7 +85,12 @@ interface ITunnelOptions {
 
 	label?: string;
 
+	/**
+	 * @deprecated Use privacy instead
+	 */
 	public?: boolean;
+
+	privacy?: string;
 
 	protocol?: string;
 }
@@ -92,7 +112,12 @@ interface ITunnel {
 	 */
 	localAddress: string;
 
+	/**
+	 * @deprecated Use privacy instead
+	 */
 	public?: boolean;
+
+	privacy?: string;
 
 	/**
 	 * If protocol is not provided, it is assumed to be http, regardless of the localAddress
@@ -156,11 +181,12 @@ interface IWelcomeBanner {
 	message: string;
 
 	/**
-	 * Optional icon for the banner. This needs to be one of the existing
-	 * icons from our Codicon icon set. For example `code`. If not provided,
-	 * a default icon will be used.
+	 * Optional icon for the banner. This is either the URL to an icon to use
+	 * or the name of one of the existing icons from our Codicon icon set.
+	 *
+	 * If not provided a default icon will be used.
 	 */
-	icon?: string;
+	icon?: string | UriComponents;
 
 	/**
 	 * Optional actions to appear as links after the welcome banner message.
@@ -351,6 +377,11 @@ interface IWorkbenchConstructionOptions {
 	 * Resolves an external uri before it is opened.
 	 */
 	readonly resolveExternalUri?: IExternalUriResolver;
+
+	/**
+	 * Support for URL callbacks.
+	 */
+	readonly externalURLOpener?: IExternalURLOpener;
 
 	/**
 	 * A provider for supplying tunneling functionality,
@@ -730,6 +761,9 @@ export {
 
 	// External Uris
 	IExternalUriResolver,
+
+	// External URL Opener
+	IExternalURLOpener,
 
 	// Tunnel
 	ITunnelProvider,

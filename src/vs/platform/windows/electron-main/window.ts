@@ -302,7 +302,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		this.createTouchBar();
 
 		// Request handling
-		this.marketplaceHeadersPromise = resolveMarketplaceHeaders(this.productService.version, this.environmentMainService, this.fileService, {
+		this.marketplaceHeadersPromise = resolveMarketplaceHeaders(this.productService.version, this.productService, this.environmentMainService, this.configurationService, this.fileService, {
 			get: key => storageMainService.globalStorage.get(key),
 			store: (key, value) => storageMainService.globalStorage.set(key, value)
 		});
@@ -434,7 +434,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		});
 
 		// Block all SVG requests from unsupported origins
-		const supportedSvgSchemes = new Set([Schemas.file, Schemas.vscodeFileResource, Schemas.vscodeRemoteResource, 'devtools']); // TODO@mjbvz: handle webview origin
+		const supportedSvgSchemes = new Set([Schemas.file, Schemas.vscodeFileResource, Schemas.vscodeRemoteResource, 'devtools']);
 
 		// But allow them if the are made from inside an webview
 		const isSafeFrame = (requestFrame: WebFrameMain | undefined): boolean => {
@@ -453,7 +453,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		this._win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
 			const uri = URI.parse(details.url);
 			if (uri.path.endsWith('.svg')) {
-				const isSafeResourceUrl = supportedSvgSchemes.has(uri.scheme) || uri.path.includes(Schemas.vscodeRemoteResource);
+				const isSafeResourceUrl = supportedSvgSchemes.has(uri.scheme);
 				if (!isSafeResourceUrl) {
 					return callback({ cancel: !isRequestFromSafeContext(details) });
 				}
@@ -844,6 +844,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		if (this.isExtensionDevelopmentHost && cli) {
 			configuration.verbose = cli.verbose;
 			configuration.debugId = cli.debugId;
+			configuration.extensionEnvironment = cli.extensionEnvironment;
 			configuration['inspect-extensions'] = cli['inspect-extensions'];
 			configuration['inspect-brk-extensions'] = cli['inspect-brk-extensions'];
 			configuration['extensions-dir'] = cli['extensions-dir'];
