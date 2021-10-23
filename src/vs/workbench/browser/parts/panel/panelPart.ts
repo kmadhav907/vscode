@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import 'vs/css!./media/basepanelpart';
 import 'vs/css!./media/panelpart';
 import { localize } from 'vs/nls';
 import { IAction, Separator, toAction } from 'vs/base/common/actions';
@@ -588,6 +589,13 @@ export abstract class BasePanelPart extends CompositePart<PaneComposite> impleme
 		};
 	}
 
+	override onTitleAreaUpdate(compositeId: string): void {
+		super.onTitleAreaUpdate(compositeId);
+
+		// If title actions change, relayout the composite bar
+		this.layoutCompositeBar();
+	}
+
 	override layout(width: number, height: number): void {
 		if (!this.layoutService.isVisible(this.partId)) {
 			return;
@@ -662,7 +670,7 @@ export abstract class BasePanelPart extends CompositePart<PaneComposite> impleme
 		return false;
 	}
 
-	private getToolbarWidth(): number {
+	protected getToolbarWidth(): number {
 		const activePanel = this.getActivePaneComposite();
 		if (!activePanel || !this.toolBar) {
 			return 0;
@@ -883,6 +891,10 @@ export class PanelPart extends BasePanelPart {
 		this.updateGlobalToolbarActions();
 
 		return element;
+	}
+
+	override getToolbarWidth(): number {
+		return super.getToolbarWidth() + (this.globalToolBar?.getItemsWidth() ?? 0);
 	}
 
 	override layout(width: number, height: number): void {

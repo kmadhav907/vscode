@@ -34,6 +34,7 @@ import { IUndoRedoService } from 'vs/platform/undoRedo/common/undoRedo';
 import { IExplorerService } from 'vs/workbench/contrib/files/browser/files';
 import { FileEditorInputSerializer, FileEditorWorkingCopyEditorHandler } from 'vs/workbench/contrib/files/browser/editors/fileEditorHandler';
 import { ModesRegistry } from 'vs/editor/common/modes/modesRegistry';
+import product from 'vs/platform/product/common/product';
 
 class FileUriLabelContribution implements IWorkbenchContribution {
 
@@ -270,6 +271,7 @@ configurationRegistry.registerConfiguration({
 			],
 			'default': 'default',
 			'description': nls.localize('legacyWatcher', "Controls the mechanism used for file watching. Only change this when you see issues related to file watching."),
+			'scope': ConfigurationScope.APPLICATION
 		},
 		'files.hotExit': hotExitConfiguration,
 		'files.defaultLanguage': {
@@ -305,7 +307,13 @@ configurationRegistry.registerConfiguration({
 			'type': 'boolean',
 			'description': nls.localize('files.simpleDialog.enable', "Enables the simple file dialog. The simple file dialog replaces the system file dialog when enabled."),
 			'default': false
-		}
+		},
+		'files.experimentalSandboxedFileService': {
+			'type': 'boolean',
+			'description': nls.localize('files.experimentalSandboxedFileService', "Experimental: changes the file service to be sandboxed. Do not change this unless instructed!"),
+			'default': product.quality !== 'stable',
+			'scope': ConfigurationScope.APPLICATION
+		},
 	}
 });
 
