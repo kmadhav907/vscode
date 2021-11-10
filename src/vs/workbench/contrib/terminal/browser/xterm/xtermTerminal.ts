@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { ITheme, RendererType, Terminal as RawXtermTerminal } from 'xterm';
+import type { IBuffer, ITheme, RendererType, Terminal as RawXtermTerminal } from 'xterm';
 import type { ISearchOptions, SearchAddon as SearchAddonType } from 'xterm-addon-search';
 import type { Unicode11Addon as Unicode11AddonType } from 'xterm-addon-unicode11';
 import type { WebglAddon as WebglAddonType } from 'xterm-addon-webgl';
@@ -17,7 +17,7 @@ import { IColorTheme, IThemeService } from 'vs/platform/theme/common/themeServic
 import { IViewDescriptorService, ViewContainerLocation } from 'vs/workbench/common/views';
 import { editorBackground } from 'vs/platform/theme/common/colorRegistry';
 import { ansiColorIdentifiers, TERMINAL_BACKGROUND_COLOR, TERMINAL_CURSOR_BACKGROUND_COLOR, TERMINAL_CURSOR_FOREGROUND_COLOR, TERMINAL_FOREGROUND_COLOR, TERMINAL_SELECTION_BACKGROUND_COLOR } from 'vs/workbench/contrib/terminal/common/terminalColorRegistry';
-import { ICommandTracker, TERMINAL_VIEW_ID } from 'vs/workbench/contrib/terminal/common/terminal';
+import { ICommandTracker, ITerminalFont, TERMINAL_VIEW_ID } from 'vs/workbench/contrib/terminal/common/terminal';
 import { PANEL_BACKGROUND, SIDE_BAR_BACKGROUND } from 'vs/workbench/common/theme';
 import { Color } from 'vs/base/common/color';
 import { isSafari } from 'vs/base/browser/browser';
@@ -157,27 +157,27 @@ export class XtermTerminal extends DisposableStore implements IXtermTerminal {
 
 	updateConfig(): void {
 		const config = this._configHelper.config;
-		this._safeSetOption('altClickMovesCursor', config.altClickMovesCursor);
+		this.raw.options.altClickMovesCursor = config.altClickMovesCursor;
 		this._setCursorBlink(config.cursorBlinking);
 		this._setCursorStyle(config.cursorStyle);
 		this._setCursorWidth(config.cursorWidth);
-		this._safeSetOption('scrollback', config.scrollback);
-		this._safeSetOption('drawBoldTextInBrightColors', config.drawBoldTextInBrightColors);
-		this._safeSetOption('minimumContrastRatio', config.minimumContrastRatio);
-		this._safeSetOption('fastScrollSensitivity', config.fastScrollSensitivity);
-		this._safeSetOption('scrollSensitivity', config.mouseWheelScrollSensitivity);
-		this._safeSetOption('macOptionIsMeta', config.macOptionIsMeta);
+		this.raw.options.scrollback = config.scrollback;
+		this.raw.options.drawBoldTextInBrightColors = config.drawBoldTextInBrightColors;
+		this.raw.options.minimumContrastRatio = config.minimumContrastRatio;
+		this.raw.options.fastScrollSensitivity = config.fastScrollSensitivity;
+		this.raw.options.scrollSensitivity = config.mouseWheelScrollSensitivity;
+		this.raw.options.macOptionIsMeta = config.macOptionIsMeta;
 		const editorOptions = this._configurationService.getValue<IEditorOptions>('editor');
-		this._safeSetOption('altClickMovesCursor', config.altClickMovesCursor && editorOptions.multiCursorModifier === 'alt');
-		this._safeSetOption('macOptionClickForcesSelection', config.macOptionClickForcesSelection);
-		this._safeSetOption('rightClickSelectsWord', config.rightClickBehavior === 'selectWord');
-		this._safeSetOption('wordSeparator', config.wordSeparators);
-		this._safeSetOption('customGlyphs', config.customGlyphs);
+		this.raw.options.altClickMovesCursor = config.altClickMovesCursor && editorOptions.multiCursorModifier === 'alt';
+		this.raw.options.macOptionClickForcesSelection = config.macOptionClickForcesSelection;
+		this.raw.options.rightClickSelectsWord = config.rightClickBehavior === 'selectWord';
+		this.raw.options.wordSeparator = config.wordSeparators;
+		this.raw.options.customGlyphs = config.customGlyphs;
 		if ((!isSafari && config.gpuAcceleration === 'auto' && XtermTerminal._suggestedRendererType === undefined) || config.gpuAcceleration === 'on') {
 			this._enableWebglRenderer();
 		} else {
 			this._disposeOfWebglRenderer();
-			this._safeSetOption('rendererType', this._getBuiltInXtermRenderer(config.gpuAcceleration, XtermTerminal._suggestedRendererType));
+			this.raw.options.rendererType = this._getBuiltInXtermRenderer(config.gpuAcceleration, XtermTerminal._suggestedRendererType);
 		}
 	}
 
@@ -189,6 +189,19 @@ export class XtermTerminal extends DisposableStore implements IXtermTerminal {
 
 	forceRefresh() {
 		this._core.viewport?._innerRefresh();
+	}
+
+	forceUnpause() {
+		// HACK: Force the renderer to unpause by simulating an IntersectionObserver event.
+		// This is to fix an issue where dragging the windpow to the top of the screen to
+		// maximize on Windows/Linux would fire an event saying that the terminal was not
+		// visible.
+		if (this.raw.getOption('rendererType') === 'canvas') {
+			this._core._renderService?._onIntersectionChange({ intersectionRatio: 1 });
+			// HACK: Force a refresh of the screen to ensure links are refresh corrected.
+			// This can probably be removed when the above hack is fixed in Chromium.
+			this.raw.refresh(0, this.raw.rows - 1);
+		}
 	}
 
 	findNext(term: string, searchOptions: ISearchOptions): boolean {
@@ -203,6 +216,42 @@ export class XtermTerminal extends DisposableStore implements IXtermTerminal {
 			return false;
 		}
 		return this._searchAddon.findPrevious(term, searchOptions);
+	}
+
+	getFont(): ITerminalFont {
+		return this._configHelper.getFont(this._core);
+	}
+
+	getLongestViewportWrappedLineLength(): number {
+		let maxLineLength = 0;
+		for (let i = this.raw.buffer.active.length - 1; i >= this.raw.buffer.active.viewportY; i--) {
+			const lineInfo = this._getWrappedLineCount(i, this.raw.buffer.active);
+			maxLineLength = Math.max(maxLineLength, ((lineInfo.lineCount * this.raw.cols) - lineInfo.endSpaces) || 0);
+			i = lineInfo.currentIndex;
+		}
+		return maxLineLength;
+	}
+
+	private _getWrappedLineCount(index: number, buffer: IBuffer): { lineCount: number, currentIndex: number, endSpaces: number } {
+		let line = buffer.getLine(index);
+		if (!line) {
+			throw new Error('Could not get line');
+		}
+		let currentIndex = index;
+		let endSpaces = 0;
+		// line.length may exceed cols as it doesn't necessarily trim the backing array on resize
+		for (let i = Math.min(line.length, this.raw.cols) - 1; i >= 0; i--) {
+			if (line && !line?.getCell(i)?.getChars()) {
+				endSpaces++;
+			} else {
+				break;
+			}
+		}
+		while (line?.isWrapped && currentIndex > 0) {
+			currentIndex--;
+			line = buffer.getLine(currentIndex);
+		}
+		return { lineCount: index - currentIndex + 1, currentIndex, endSpaces };
 	}
 
 	scrollDownLine(): void {
@@ -233,30 +282,23 @@ export class XtermTerminal extends DisposableStore implements IXtermTerminal {
 		this.raw.clear();
 	}
 
-	private _safeSetOption(key: string, value: any): void {
-		if (this.raw.getOption(key) !== value) {
-			this.raw.setOption(key, value);
-		}
-	}
-
 	private _setCursorBlink(blink: boolean): void {
-		if (this.raw.getOption('cursorBlink') !== blink) {
-			this.raw.setOption('cursorBlink', blink);
+		if (this.raw.options.cursorBlink !== blink) {
+			this.raw.options.cursorBlink = blink;
 			this.raw.refresh(0, this.raw.rows - 1);
 		}
 	}
 
-	private _setCursorStyle(style: string): void {
-		if (this.raw.getOption('cursorStyle') !== style) {
+	private _setCursorStyle(style: 'block' | 'underline' | 'bar' | 'line'): void {
+		if (this.raw.options.cursorStyle !== style) {
 			// 'line' is used instead of bar in VS Code to be consistent with editor.cursorStyle
-			const xtermOption = style === 'line' ? 'bar' : style;
-			this.raw.setOption('cursorStyle', xtermOption);
+			this.raw.options.cursorStyle = (style === 'line') ? 'bar' : style;
 		}
 	}
 
 	private _setCursorWidth(width: number): void {
-		if (this.raw.getOption('cursorWidth') !== width) {
-			this.raw.setOption('cursorWidth', width);
+		if (this.raw.options.cursorWidth !== width) {
+			this.raw.options.cursorWidth = width;
 		}
 	}
 
@@ -279,7 +321,7 @@ export class XtermTerminal extends DisposableStore implements IXtermTerminal {
 			this._webglAddon.onContextLoss(() => {
 				this._logService.info(`Webgl lost context, disposing of webgl renderer`);
 				this._disposeOfWebglRenderer();
-				this._safeSetOption('rendererType', 'dom');
+				this.raw.options.rendererType = 'dom';
 			});
 		} catch (e) {
 			this._logService.warn(`Webgl could not be loaded. Falling back to the canvas renderer type.`, e);
@@ -288,7 +330,7 @@ export class XtermTerminal extends DisposableStore implements IXtermTerminal {
 			if (!neverMeasureRenderTime && this._configHelper.config.gpuAcceleration !== 'off') {
 				this._measureRenderTime();
 			}
-			this._safeSetOption('rendererType', 'canvas');
+			this.raw.options.rendererType = 'canvas';
 			XtermTerminal._suggestedRendererType = 'canvas';
 			this._disposeOfWebglRenderer();
 		}

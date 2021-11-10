@@ -93,7 +93,7 @@ import 'vs/workbench/services/quickinput/browser/quickInputService';
 import 'vs/workbench/services/userDataSync/browser/userDataSyncWorkbenchService';
 import 'vs/workbench/services/authentication/browser/authenticationService';
 import 'vs/workbench/services/hover/browser/hoverService';
-import 'vs/workbench/services/experiment/common/experimentService';
+import 'vs/workbench/services/assignment/common/assignmentService';
 import 'vs/workbench/services/outline/browser/outlineService';
 import 'vs/workbench/services/languageDetection/browser/languageDetectionWorkerServiceImpl';
 
@@ -156,6 +156,9 @@ import 'vs/workbench/contrib/preferences/browser/preferencesSearch';
 
 // Performance
 import 'vs/workbench/contrib/performance/browser/performance.contribution';
+
+// Context Menus
+import 'vs/workbench/contrib/contextmenu/browser/contextmenu.contribution';
 
 // Notebook
 import 'vs/workbench/contrib/notebook/browser/notebook.contribution';

@@ -1021,11 +1021,6 @@ configurationRegistry.registerConfiguration({
 				nls.localize('searchSortOrder.countAscending', "Results are sorted by count per file, in ascending order.")
 			],
 			'description': nls.localize('search.sortOrder', "Controls sorting order of search results.")
-		},
-		'search.forceSearchProcess': {
-			type: 'boolean',
-			default: false,
-			description: nls.localize('search.forceSearchProcess', "When enabled, search in a local window runs in a separate search process instead of the extension host.")
 		}
 	}
 });

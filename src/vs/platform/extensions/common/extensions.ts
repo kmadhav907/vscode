@@ -148,8 +148,15 @@ export interface IStartEntry {
 	readonly category: 'file' | 'folder' | 'notebook';
 }
 
+export interface INotebookEntry {
+	readonly type: string;
+	readonly displayName: string;
+}
+
 export interface INotebookRendererContribution {
 	readonly id: string;
+	readonly displayName: string;
+	readonly mimeTypes: string[];
 }
 
 export interface IExtensionContributions {
@@ -174,6 +181,7 @@ export interface IExtensionContributions {
 	authentication?: IAuthenticationContribution[];
 	walkthroughs?: IWalkthrough[];
 	startEntries?: IStartEntry[];
+	readonly notebooks?: INotebookEntry[];
 	readonly notebookRenderer?: INotebookRendererContribution[];
 }
 
@@ -341,6 +349,16 @@ export interface IExtensionDescription extends IExtensionManifest {
 	enableProposedApi?: boolean;
 }
 
+export function isProposedApiEnabled(extension: IExtensionDescription | IExtensionManifest): boolean {
+	return Boolean(extension.enableProposedApi);
+}
+
+export function checkProposedApiEnabled(extension: IExtensionDescription): void {
+	if (!isProposedApiEnabled(extension)) {
+		throw new Error(`[${extension.identifier.value}]: Proposed API is only available when running out of dev or with the following command line switch: --enable-proposed-api ${extension.identifier.value}`);
+	}
+}
+
 export function isLanguagePackExtension(manifest: IExtensionManifest): boolean {
 	return manifest.contributes && manifest.contributes.localizations ? manifest.contributes.localizations.length > 0 : false;
 }
@@ -350,7 +368,7 @@ export function isAuthenticationProviderExtension(manifest: IExtensionManifest):
 }
 
 export function isResolverExtension(manifest: IExtensionManifest, remoteAuthority: string | undefined): boolean {
-	if (remoteAuthority && manifest.enableProposedApi) {
+	if (remoteAuthority && isProposedApiEnabled(manifest)) {
 		const activationEvent = `onResolveRemoteAuthority:${getRemoteName(remoteAuthority)}`;
 		return manifest.activationEvents?.indexOf(activationEvent) !== -1;
 	}

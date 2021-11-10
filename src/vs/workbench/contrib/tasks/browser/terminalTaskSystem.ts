@@ -46,7 +46,7 @@ import { IPathService } from 'vs/workbench/services/path/common/pathService';
 import { IViewsService, IViewDescriptorService, ViewContainerLocation } from 'vs/workbench/common/views';
 import { ILogService } from 'vs/platform/log/common/log';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { IShellLaunchConfig, TerminalSettingId } from 'vs/platform/terminal/common/terminal';
+import { IShellLaunchConfig, TerminalLocation, TerminalSettingId } from 'vs/platform/terminal/common/terminal';
 import { TerminalProcessExtHostProxy } from 'vs/workbench/contrib/terminal/browser/terminalProcessExtHostProxy';
 import { TaskTerminalStatus } from 'vs/workbench/contrib/tasks/browser/taskTerminalStatus';
 import { ITaskService } from 'vs/workbench/contrib/tasks/common/taskService';
@@ -200,6 +200,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 	private previousPanelId: string | undefined;
 	private previousTerminalInstance: ITerminalInstance | undefined;
 	private terminalStatusManager: TaskTerminalStatus;
+	private terminalCreationQueue: Promise<ITerminalInstance | void> = Promise.resolve();
 
 	private readonly _onDidStateChange: Emitter<TaskEvent>;
 
@@ -828,12 +829,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 				this.logService.error('Task terminal process never got ready');
 			});
 			this.fireTaskEvent(TaskEvent.create(TaskEventKind.Start, task, terminal.instanceId));
-			let skipLine: boolean = (!!task.command.presentation && task.command.presentation.echo);
 			const onData = terminal.onLineData((line) => {
-				if (skipLine) {
-					skipLine = false;
-					return;
-				}
 				watchingProblemMatcher.processLine(line);
 				if (!delayer) {
 					delayer = new Async.Delayer(3000);
@@ -919,12 +915,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			let problemMatchers = await this.resolveMatchers(resolver, task.configurationProperties.problemMatchers);
 			let startStopProblemMatcher = new StartStopProblemCollector(problemMatchers, this.markerService, this.modelService, ProblemHandlingStrategy.Clean, this.fileService);
 			this.terminalStatusManager.addTerminal(task, terminal, startStopProblemMatcher);
-			let skipLine: boolean = (!!task.command.presentation && task.command.presentation.echo);
 			const onData = terminal.onLineData((line) => {
-				if (skipLine) {
-					skipLine = false;
-					return;
-				}
 				startStopProblemMatcher.processLine(line);
 			});
 			promise = new Promise<ITaskSummary>((resolve, reject) => {
@@ -1205,6 +1196,24 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 		return shellLaunchConfig;
 	}
 
+	private async doCreateTerminal(group: string | undefined, launchConfigs: IShellLaunchConfig): Promise<ITerminalInstance> {
+		if (group) {
+			// Try to find an existing terminal to split.
+			// Even if an existing terminal is found, the split can fail if the terminal width is too small.
+			for (const terminal of values(this.terminals)) {
+				if (terminal.group === group) {
+					const originalInstance = terminal.terminal;
+					const result = await this.terminalService.createTerminal({ location: { parentTerminal: originalInstance }, config: launchConfigs });
+					if (result) {
+						return result;
+					}
+				}
+			}
+		}
+		// Either no group is used, no terminal with the group exists or splitting an existing terminal failed.
+		return this.terminalService.createTerminal({ location: TerminalLocation.Panel, config: launchConfigs });
+	}
+
 	private async createTerminal(task: CustomTask | ContributedTask, resolver: VariableResolver, workspaceFolder: IWorkspaceFolder | undefined): Promise<[ITerminalInstance | undefined, string | undefined, TaskError | undefined]> {
 		let platform = resolver.taskSystemInfo ? resolver.taskSystemInfo.platform : Platform.platform;
 		let options = await this.resolveOptions(resolver, task.command.options);
@@ -1300,25 +1309,10 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			return [terminalToReuse.terminal, commandExecutable, undefined];
 		}
 
-		let result: ITerminalInstance | null = null;
-		if (group) {
-			// Try to find an existing terminal to split.
-			// Even if an existing terminal is found, the split can fail if the terminal width is too small.
-			for (const terminal of values(this.terminals)) {
-				if (terminal.group === group) {
-					const originalInstance = terminal.terminal;
-					await originalInstance.waitForTitle();
-					result = await this.terminalService.createTerminal({ location: { parentTerminal: originalInstance }, config: launchConfigs });
-					if (result) {
-						break;
-					}
-				}
-			}
-		}
-		if (!result) {
-			// Either no group is used, no terminal with the group exists or splitting an existing terminal failed.
-			result = await this.terminalService.createTerminal({ config: launchConfigs });
-		}
+		await this.terminalCreationQueue;
+		const createTerminalPromise = this.doCreateTerminal(group, launchConfigs);
+		this.terminalCreationQueue = createTerminalPromise;
+		const result: ITerminalInstance = await createTerminalPromise;
 
 		const terminalKey = result.instanceId.toString();
 		result.onDisposed((terminal) => {
