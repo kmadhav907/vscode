@@ -91,6 +91,7 @@ export const enum TerminalSettingId {
 	UnicodeVersion = 'terminal.integrated.unicodeVersion',
 	ExperimentalLinkProvider = 'terminal.integrated.experimentalLinkProvider',
 	LocalEchoLatencyThreshold = 'terminal.integrated.localEchoLatencyThreshold',
+	LocalEchoEnabled = 'terminal.integrated.localEchoEnabled',
 	LocalEchoExcludePrograms = 'terminal.integrated.localEchoExcludePrograms',
 	LocalEchoStyle = 'terminal.integrated.localEchoStyle',
 	EnablePersistentSessions = 'terminal.integrated.enablePersistentSessions',
@@ -100,6 +101,7 @@ export const enum TerminalSettingId {
 	InheritEnv = 'terminal.integrated.inheritEnv',
 	ShowLinkHover = 'terminal.integrated.showLinkHover',
 	IgnoreProcessNames = 'terminal.integrated.ignoreProcessNames',
+	AutoReplies = 'terminal.integrated.autoReplies',
 }
 
 export enum WindowsShellType {
@@ -277,6 +279,9 @@ export interface IPtyService {
 	orphanQuestionReply(id: number): Promise<void>;
 	updateTitle(id: number, title: string, titleSource: TitleEventSource): Promise<void>;
 	updateIcon(id: number, icon: TerminalIcon, color?: string): Promise<void>;
+	installAutoReply(match: string, reply: string): Promise<void>;
+	uninstallAllAutoReplies(): Promise<void>;
+	uninstallAutoReply(match: string): Promise<void>;
 	getDefaultSystemShell(osOverride?: OperatingSystem): Promise<string>;
 	getProfiles?(workspaceId: string, profiles: unknown, defaultProfile: unknown, includeDetectedProfiles?: boolean): Promise<ITerminalProfile[]>;
 	getEnvironment(): Promise<IProcessEnvironment>;
@@ -295,7 +300,7 @@ export interface IPtyService {
 	 * Revives a workspaces terminal processes, these can then be reconnected to using the normal
 	 * flow for restoring terminals after reloading.
 	 */
-	reviveTerminalProcesses(state: string): Promise<void>;
+	reviveTerminalProcesses(state: string, dateTimeFormatLocate: string): Promise<void>;
 	refreshProperty<T extends ProcessPropertyType>(id: number, property: T): Promise<IProcessPropertyMap[T]>;
 	updateProperty<T extends ProcessPropertyType>(id: number, property: T, value: IProcessPropertyMap[T]): Promise<void>;
 
@@ -462,6 +467,11 @@ export interface IShellLaunchConfig {
 	 * or via Size to Content Width
 	 */
 	fixedDimensions?: IFixedTerminalDimensions;
+
+	/**
+	 * Opt-out of the default terminal persistence on restart and reload
+	 */
+	disablePersistence?: boolean;
 }
 
 export interface ICreateContributedTerminalProfileOptions {

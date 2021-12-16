@@ -11,6 +11,7 @@ import { IModelDecoration, ITextModel, PositionAffinity } from 'vs/editor/common
 import { IViewModelLines } from 'vs/editor/common/viewModel/viewModelLines';
 import { ICoordinatesConverter, InlineDecoration, InlineDecorationType, ViewModelDecoration } from 'vs/editor/common/viewModel/viewModel';
 import { filterValidationDecorations } from 'vs/editor/common/config/editorOptions';
+import { StandardTokenType } from 'vs/editor/common/modes';
 
 export interface IDecorationsViewportData {
 	/**
@@ -107,6 +108,7 @@ export class ViewModelDecorations implements IDisposable {
 
 	private _getDecorationsViewportData(viewportRange: Range): IDecorationsViewportData {
 		const modelDecorations = this._linesCollection.getDecorationsInRange(viewportRange, this.editorId, filterValidationDecorations(this.configuration.options));
+
 		const startLineNumber = viewportRange.startLineNumber;
 		const endLineNumber = viewportRange.endLineNumber;
 
@@ -119,6 +121,10 @@ export class ViewModelDecorations implements IDisposable {
 		for (let i = 0, len = modelDecorations.length; i < len; i++) {
 			let modelDecoration = modelDecorations[i];
 			let decorationOptions = modelDecoration.options;
+
+			if (!isModelDecorationVisible(this.model, modelDecoration)) {
+				continue;
+			}
 
 			let viewModelDecoration = this._getOrCreateViewModelDecoration(modelDecoration);
 			let viewRange = viewModelDecoration.range;
@@ -160,4 +166,62 @@ export class ViewModelDecorations implements IDisposable {
 			inlineDecorations: inlineDecorations
 		};
 	}
+}
+
+export function isModelDecorationVisible(model: ITextModel, decoration: IModelDecoration): boolean {
+	if (decoration.options.hideInCommentTokens && isModelDecorationInComment(model, decoration)) {
+		return false;
+	}
+
+	if (decoration.options.hideInStringTokens && isModelDecorationInString(model, decoration)) {
+		return false;
+	}
+
+	return true;
+}
+
+export function isModelDecorationInComment(model: ITextModel, decoration: IModelDecoration): boolean {
+	return testTokensInRange(
+		model,
+		decoration.range,
+		(tokenType) => tokenType === StandardTokenType.Comment
+	);
+}
+
+export function isModelDecorationInString(model: ITextModel, decoration: IModelDecoration): boolean {
+	return testTokensInRange(
+		model,
+		decoration.range,
+		(tokenType) => tokenType === StandardTokenType.String
+	);
+}
+
+/**
+ * Calls the callback for every token that intersects the range.
+ * If the callback returns `false`, iteration stops and `false` is returned.
+ * Otherwise, `true` is returned.
+ */
+function testTokensInRange(model: ITextModel, range: Range, callback: (tokenType: StandardTokenType) => boolean): boolean {
+	for (let lineNumber = range.startLineNumber; lineNumber <= range.endLineNumber; lineNumber++) {
+		const lineTokens = model.getLineTokens(lineNumber);
+		const isFirstLine = lineNumber === range.startLineNumber;
+		const isEndLine = lineNumber === range.endLineNumber;
+
+		let tokenIdx = isFirstLine ? lineTokens.findTokenIndexAtOffset(range.startColumn - 1) : 0;
+		while (tokenIdx < lineTokens.getCount()) {
+			if (isEndLine) {
+				const startOffset = lineTokens.getStartOffset(tokenIdx);
+				if (startOffset > range.endColumn - 1) {
+					break;
+				}
+			}
+
+			const callbackResult = callback(lineTokens.getStandardTokenType(tokenIdx));
+			if (!callbackResult) {
+				return false;
+			}
+			tokenIdx++;
+		}
+	}
+	return true;
 }

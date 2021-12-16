@@ -14,7 +14,7 @@ import { Event, Emitter, MicrotaskEmitter } from 'vs/base/common/event';
 import { URI } from 'vs/base/common/uri';
 import { joinPath } from 'vs/base/common/resources';
 import { DiffEditorInput } from 'vs/workbench/common/editor/diffEditorInput';
-import { IEditorGroupsService, IEditorGroup, GroupsOrder, IEditorReplacement, GroupChangeKind, isEditorReplacement } from 'vs/workbench/services/editor/common/editorGroupsService';
+import { IEditorGroupsService, IEditorGroup, GroupsOrder, IEditorReplacement, isEditorReplacement } from 'vs/workbench/services/editor/common/editorGroupsService';
 import { IUntypedEditorReplacement, IEditorService, ISaveEditorsOptions, ISaveAllEditorsOptions, IRevertAllEditorsOptions, IBaseSaveRevertAllEditorOptions, IOpenEditorsOptions, PreferredGroup, isPreferredGroup, IEditorsChangeEvent } from 'vs/workbench/services/editor/common/editorService';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { Disposable, IDisposable, dispose, DisposableStore } from 'vs/base/common/lifecycle';
@@ -147,23 +147,17 @@ export class EditorService extends Disposable implements EditorServiceImpl {
 	private registerGroupListeners(group: IEditorGroupView): void {
 		const groupDisposables = new DisposableStore();
 
-		groupDisposables.add(group.onDidGroupChange(e => {
-			switch (e.kind) {
-				case GroupChangeKind.EDITOR_ACTIVE:
-					if (group.activeEditor) {
-						this._onDidEditorsChange.fire([{ groupId: group.id, editor: group.activeEditor, kind: GroupChangeKind.EDITOR_ACTIVE }]);
-					}
-					this.handleActiveEditorChange(group);
-					this._onDidVisibleEditorsChange.fire();
-					break;
-				default:
-					this._onDidEditorsChange.fire([{ groupId: group.id, ...e }]);
-					break;
-			}
+		groupDisposables.add(group.onDidModelChange(e => {
+			this._onDidEditorsChange.fire([{ groupId: group.id, ...e }]);
 		}));
 
-		groupDisposables.add(group.onDidCloseEditor(event => {
-			this._onDidCloseEditor.fire(event);
+		groupDisposables.add(group.onDidActiveEditorChange(() => {
+			this.handleActiveEditorChange(group);
+			this._onDidVisibleEditorsChange.fire();
+		}));
+
+		groupDisposables.add(group.onDidCloseEditor(e => {
+			this._onDidCloseEditor.fire(e);
 		}));
 
 		groupDisposables.add(group.onDidOpenEditorFail(editor => {
@@ -449,7 +443,7 @@ export class EditorService extends Disposable implements EditorServiceImpl {
 				return this.editorsObserver.editors;
 
 			// Sequential
-			case EditorsOrder.SEQUENTIAL:
+			case EditorsOrder.SEQUENTIAL: {
 				const editors: IEditorIdentifier[] = [];
 
 				for (const group of this.editorGroupService.getGroups(GroupsOrder.GRID_APPEARANCE)) {
@@ -457,6 +451,7 @@ export class EditorService extends Disposable implements EditorServiceImpl {
 				}
 
 				return editors;
+			}
 		}
 	}
 

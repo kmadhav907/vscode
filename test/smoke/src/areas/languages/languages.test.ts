@@ -3,16 +3,24 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import minimist = require('minimist');
-import { Application, ProblemSeverity, Problems } from '../../../../automation/out';
-import { afterSuite, beforeSuite } from '../../utils';
+import { Application, ProblemSeverity, Problems, Logger } from '../../../../automation';
+import { installAllHandlers } from '../../utils';
 
-export function setup(opts: minimist.ParsedArgs) {
+export function setup(logger: Logger) {
 	describe('Language Features', () => {
-		beforeSuite(opts);
-		afterSuite(opts);
 
-		it('verifies quick outline', async function () {
+		// Shared before/after handling
+		installAllHandlers(logger);
+
+		it('verifies quick outline (js)', async function () {
+			const app = this.app as Application;
+			await app.workbench.quickaccess.openFile('www');
+
+			await app.workbench.quickaccess.openQuickOutline();
+			await app.workbench.quickinput.waitForQuickInputElements(names => names.length >= 6);
+		});
+
+		it('verifies quick outline (css)', async function () {
 			const app = this.app as Application;
 			await app.workbench.quickaccess.openFile('style.css');
 
@@ -20,7 +28,7 @@ export function setup(opts: minimist.ParsedArgs) {
 			await app.workbench.quickinput.waitForQuickInputElements(names => names.length === 2);
 		});
 
-		it('verifies problems view', async function () {
+		it('verifies problems view (css)', async function () {
 			const app = this.app as Application;
 			await app.workbench.quickaccess.openFile('style.css');
 			await app.workbench.editor.waitForTypeInEditor('style.css', '.foo{}');
@@ -32,7 +40,7 @@ export function setup(opts: minimist.ParsedArgs) {
 			await app.workbench.problems.hideProblemsView();
 		});
 
-		it('verifies settings', async function () {
+		it('verifies settings (css)', async function () {
 			const app = this.app as Application;
 			await app.workbench.settingsEditor.addUserSetting('css.lint.emptyRules', '"error"');
 			await app.workbench.quickaccess.openFile('style.css');

@@ -10,7 +10,7 @@ import { DirtyDiffWorkbenchController } from './dirtydiffDecorator';
 import { VIEWLET_ID, ISCMRepository, ISCMService, VIEW_PANE_ID, ISCMProvider, ISCMViewService, REPOSITORIES_VIEW_PANE_ID } from 'vs/workbench/contrib/scm/common/scm';
 import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
 import { MenuRegistry, MenuId } from 'vs/platform/actions/common/actions';
-import { SCMStatusController } from './activity';
+import { SCMActiveResourceContextKeyController, SCMStatusController } from './activity';
 import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions, ConfigurationScope } from 'vs/platform/configuration/common/configurationRegistry';
 import { IContextKeyService, ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
@@ -29,10 +29,12 @@ import { SCMViewService } from 'vs/workbench/contrib/scm/browser/scmViewService'
 import { SCMRepositoriesViewPane } from 'vs/workbench/contrib/scm/browser/scmRepositoriesViewPane';
 import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
 import { Context as SuggestContext } from 'vs/editor/contrib/suggest/suggest';
+import { MANAGE_TRUST_COMMAND_ID, WorkspaceTrustContext } from 'vs/workbench/contrib/workspace/common/workspace';
 
 ModesRegistry.registerLanguage({
 	id: 'scminput',
 	extensions: [],
+	aliases: [], // hide from language selector
 	mimetypes: ['text/x-scm-input']
 });
 
@@ -57,6 +59,16 @@ const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsR
 viewsRegistry.registerViewWelcomeContent(VIEW_PANE_ID, {
 	content: localize('no open repo', "No source control providers registered."),
 	when: 'default'
+});
+
+viewsRegistry.registerViewWelcomeContent(VIEW_PANE_ID, {
+	content: localize('no open repo in an untrusted workspace', "None of the registered source control providers work in Restricted Mode."),
+	when: ContextKeyExpr.and(WorkspaceTrustContext.IsEnabled, WorkspaceTrustContext.IsTrusted.toNegated())
+});
+
+viewsRegistry.registerViewWelcomeContent(VIEW_PANE_ID, {
+	content: `[${localize('manageWorkspaceTrustAction', "Manage Workspace Trust")}](command:${MANAGE_TRUST_COMMAND_ID})`,
+	when: ContextKeyExpr.and(WorkspaceTrustContext.IsEnabled, WorkspaceTrustContext.IsTrusted.toNegated())
 });
 
 viewsRegistry.registerViews([{
@@ -96,6 +108,9 @@ viewsRegistry.registerViews([{
 	// readonly when = ContextKeyExpr.or(ContextKeyExpr.equals('config.scm.alwaysShowProviders', true), ContextKeyExpr.and(ContextKeyExpr.notEquals('scm.providerCount', 0), ContextKeyExpr.notEquals('scm.providerCount', 1)));
 	containerIcon: sourceControlViewIcon
 }], viewContainer);
+
+Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench)
+	.registerWorkbenchContribution(SCMActiveResourceContextKeyController, LifecyclePhase.Restored);
 
 Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench)
 	.registerWorkbenchContribution(SCMStatusController, LifecyclePhase.Restored);

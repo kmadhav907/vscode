@@ -55,8 +55,8 @@ import { RemoteAgentConnectionContext } from 'vs/platform/remote/common/remoteAg
 import { IPCServer, ClientConnectionEvent, IMessagePassingProtocol, StaticRouter } from 'vs/base/parts/ipc/common/ipc';
 import { Emitter, Event } from 'vs/base/common/event';
 import { RemoteAgentEnvironmentChannel } from 'vs/server/remoteAgentEnvironmentImpl';
-import { RemoteAgentFileSystemProviderChannel } from 'vs/server/remoteFileSystemProviderIpc';
-import { REMOTE_FILE_SYSTEM_CHANNEL_NAME } from 'vs/workbench/services/remote/common/remoteAgentFileSystemChannel';
+import { RemoteAgentFileSystemProviderChannel } from 'vs/server/remoteFileSystemProviderServer';
+import { REMOTE_FILE_SYSTEM_CHANNEL_NAME } from 'vs/workbench/services/remote/common/remoteFileSystemProviderClient';
 import { RequestChannel } from 'vs/platform/request/common/requestIpc';
 import { ExtensionManagementChannel } from 'vs/platform/extensionManagement/common/extensionManagementIpc';
 import ErrorTelemetry from 'vs/platform/telemetry/node/errorTelemetry';
@@ -322,8 +322,8 @@ export class RemoteExtensionHostAgentServer extends Disposable {
 		const ptyService = instantiationService.createInstance(
 			PtyHostService,
 			{
-				GraceTime: ProtocolConstants.ReconnectionGraceTime,
-				ShortGraceTime: ProtocolConstants.ReconnectionShortGraceTime,
+				graceTime: ProtocolConstants.ReconnectionGraceTime,
+				shortGraceTime: ProtocolConstants.ReconnectionShortGraceTime,
 				scrollback: configurationService.getValue<number>(TerminalSettingId.PersistentSessionScrollback) ?? 100
 			}
 		);
@@ -346,6 +346,9 @@ export class RemoteExtensionHostAgentServer extends Disposable {
 
 			// clean up deprecated extensions
 			(extensionManagementService as ExtensionManagementService).removeDeprecatedExtensions();
+
+			// migrate unsupported extensions
+			(extensionManagementService as ExtensionManagementService).migrateUnsupportedExtensions();
 
 			this._register(new ErrorTelemetry(accessor.get(ITelemetryService)));
 
@@ -494,12 +497,14 @@ export class RemoteExtensionHostAgentServer extends Disposable {
 
 		// Never timeout this socket due to inactivity!
 		socket.setTimeout(0);
+		// Disable Nagle's algorithm
+		socket.setNoDelay(true);
 		// Finally!
 
 		if (skipWebSocketFrames) {
-			this._handleWebSocketConnection(new NodeSocket(socket), isReconnection, reconnectionToken);
+			this._handleWebSocketConnection(new NodeSocket(socket, `server-connection-${reconnectionToken}`), isReconnection, reconnectionToken);
 		} else {
-			this._handleWebSocketConnection(new WebSocketNodeSocket(new NodeSocket(socket), permessageDeflate, null, true), isReconnection, reconnectionToken);
+			this._handleWebSocketConnection(new WebSocketNodeSocket(new NodeSocket(socket, `server-connection-${reconnectionToken}`), permessageDeflate, null, true), isReconnection, reconnectionToken);
 		}
 	}
 
@@ -754,6 +759,7 @@ export class RemoteExtensionHostAgentServer extends Disposable {
 					}
 				}
 
+				protocol.sendPause();
 				protocol.sendControl(VSBuffer.fromString(JSON.stringify(startParams.port ? { debugPort: startParams.port } : {})));
 				const dataChunk = protocol.readEntireBuffer();
 				protocol.dispose();
@@ -766,6 +772,7 @@ export class RemoteExtensionHostAgentServer extends Disposable {
 					return this._rejectWebSocketConnection(logPrefix, protocol, `Duplicate reconnection token`);
 				}
 
+				protocol.sendPause();
 				protocol.sendControl(VSBuffer.fromString(JSON.stringify(startParams.port ? { debugPort: startParams.port } : {})));
 				const dataChunk = protocol.readEntireBuffer();
 				protocol.dispose();
@@ -914,8 +921,8 @@ export class RemoteExtensionHostAgentServer extends Disposable {
 
 function parseConnectionToken(args: ServerParsedArgs): { connectionToken: string; connectionTokenIsMandatory: boolean; } {
 	if (args['connection-secret']) {
-		if (args['connectionToken']) {
-			console.warn(`Please do not use the argument connectionToken at the same time as connection-secret.`);
+		if (args['connection-token']) {
+			console.warn(`Please do not use the argument '--connection-token' at the same time as '--connection-secret'.`);
 			process.exit(1);
 		}
 		let rawConnectionToken = fs.readFileSync(args['connection-secret']).toString();
@@ -926,7 +933,7 @@ function parseConnectionToken(args: ServerParsedArgs): { connectionToken: string
 		}
 		return { connectionToken: rawConnectionToken, connectionTokenIsMandatory: true };
 	} else {
-		return { connectionToken: args['connectionToken'] || generateUuid(), connectionTokenIsMandatory: false };
+		return { connectionToken: args['connection-token'] || generateUuid(), connectionTokenIsMandatory: false };
 	}
 }
 

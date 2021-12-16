@@ -120,6 +120,7 @@ class MarkdownPreview extends Disposable implements WebviewResourceProvider {
 	private imageInfo: { readonly id: string, readonly width: number, readonly height: number; }[] = [];
 
 	private readonly _fileWatchersBySrc = new Map</* src: */ string, vscode.FileSystemWatcher>();
+	private readonly _unwatchedImageSchemes = new Set(['https', 'http', 'data']);
 
 	private readonly _onScrollEmitter = this._register(new vscode.EventEmitter<LastScrollLocation>());
 	public readonly onScroll = this._onScrollEmitter.event;
@@ -179,7 +180,11 @@ class MarkdownPreview extends Disposable implements WebviewResourceProvider {
 		}));
 
 		this._register(this._webviewPanel.onDidChangeViewState(async () => {
-			if (!this._webviewPanel.active) {
+			if (this._disposed) {
+				return;
+			}
+
+			if (this._webviewPanel.active) {
 				let document: vscode.TextDocument;
 				try {
 					document = await vscode.workspace.openTextDocument(this._resource);
@@ -187,8 +192,12 @@ class MarkdownPreview extends Disposable implements WebviewResourceProvider {
 					return;
 				}
 
+				if (this._disposed) {
+					return;
+				}
+
 				const content = await this._contentProvider.provideTextDocumentContent(document, this, this._previewConfigurations, this.line, this.state);
-				if (!this._webviewPanel.active) {
+				if (!this._webviewPanel.active && !this._disposed) {
 					// Update the html so we can show it properly when restoring it
 					this._webviewPanel.webview.html = content.html;
 				}
@@ -427,7 +436,7 @@ class MarkdownPreview extends Disposable implements WebviewResourceProvider {
 		const root = vscode.Uri.joinPath(this._resource, '../');
 		for (const src of srcs) {
 			const uri = urlToUri(src, root);
-			if (uri && uri.scheme === 'file' && !this._fileWatchersBySrc.has(src)) {
+			if (uri && !this._unwatchedImageSchemes.has(uri.scheme) && !this._fileWatchersBySrc.has(src)) {
 				const watcher = vscode.workspace.createFileSystemWatcher(uri.fsPath);
 				watcher.onDidChange(() => {
 					this.refresh(true);

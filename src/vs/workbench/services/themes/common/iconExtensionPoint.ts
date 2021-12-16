@@ -126,8 +126,8 @@ export class IconExtensionPoint {
 				const extensionValue = <IIconExtensionPoint[]>extension.value;
 				const collector = extension.collector;
 
-				if (!isProposedApiEnabled(extension.description, undefined)) {
-					collector.error(nls.localize('invalid.icons.proposedAPI', "'configuration.icons is a proposed contribution point and only available when running out of dev or with the following command line switch: --enable-proposed-api {0}", extension.description.identifier.value));
+				if (!isProposedApiEnabled(extension.description, 'contribIcons')) {
+					collector.error(nls.localize('invalid.icons.proposedAPI', "'configuration.icons is a proposed contribution point. It requires 'package.json#enabledApiProposals: [\"contribIcons\"]' and is only available when running out of dev or with the following command line switch: --enable-proposed-api {0}", extension.description.identifier.value));
 					return;
 				}
 
@@ -153,9 +153,13 @@ export class IconExtensionPoint {
 					if (typeof defaultIcon === 'string') {
 						iconRegistry.registerIcon(iconContribution.id, { id: defaultIcon }, iconContribution.description);
 					} else if (typeof defaultIcon === 'object' && typeof defaultIcon.fontId === 'string' && typeof defaultIcon.fontCharacter === 'string') {
+						const fontId = getFontId(extension.description, defaultIcon.fontId);
 						iconRegistry.registerIcon(iconContribution.id, {
-							fontId: getFontId(extension.description, defaultIcon.fontId),
 							fontCharacter: defaultIcon.fontCharacter,
+							font: {
+								id: fontId,
+								getDefinition: () => iconRegistry.getIconFont(fontId)
+							}
 						}, iconContribution.description);
 					} else {
 						collector.error(nls.localize('invalid.icons.default', "'configuration.icons.default' must be either a reference to the id of an other theme icon (string) or a icon definition (object) with properties `fontId` and `fontCharacter`."));
@@ -180,8 +184,8 @@ export class IconFontExtensionPoint {
 				const extensionValue = <IIconFontExtensionPoint[]>extension.value;
 				const collector = extension.collector;
 
-				if (!isProposedApiEnabled(extension.description, undefined)) {
-					collector.error(nls.localize('invalid.iconFonts.proposedAPI', "'configuration.iconFonts is a proposed contribution point and only available when running out of dev or with the following command line switch: --enable-proposed-api {0}", extension.description.identifier.value));
+				if (!isProposedApiEnabled(extension.description, 'contribIconFonts')) {
+					collector.error(nls.localize('invalid.iconFonts.proposedAPI', "'configuration.iconFonts is a proposed contribution point. It requires 'package.json#enabledApiProposals: [\"contribIconFonts\"]' and is and only available when running out of dev or with the following command line switch: --enable-proposed-api {0}", extension.description.identifier.value));
 					return;
 				}
 

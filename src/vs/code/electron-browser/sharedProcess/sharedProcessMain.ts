@@ -14,7 +14,7 @@ import { URI } from 'vs/base/common/uri';
 import { ProxyChannel, StaticRouter } from 'vs/base/parts/ipc/common/ipc';
 import { Server as MessagePortServer } from 'vs/base/parts/ipc/electron-browser/ipc.mp';
 import { CodeCacheCleaner } from 'vs/code/electron-browser/sharedProcess/contrib/codeCacheCleaner';
-import { DeprecatedExtensionsCleaner } from 'vs/code/electron-browser/sharedProcess/contrib/deprecatedExtensionsCleaner';
+import { ExtensionsCleaner } from 'vs/code/electron-browser/sharedProcess/contrib/extensionsCleaner';
 import { LanguagePackCachedDataCleaner } from 'vs/code/electron-browser/sharedProcess/contrib/languagePackCachedDataCleaner';
 import { LocalizationsUpdater } from 'vs/code/electron-browser/sharedProcess/contrib/localizationsUpdater';
 import { LogsDataCleaner } from 'vs/code/electron-browser/sharedProcess/contrib/logsDataCleaner';
@@ -28,7 +28,7 @@ import { DiagnosticsService } from 'vs/platform/diagnostics/node/diagnosticsServ
 import { IDownloadService } from 'vs/platform/download/common/download';
 import { DownloadService } from 'vs/platform/download/common/downloadService';
 import { INativeEnvironmentService } from 'vs/platform/environment/common/environment';
-import { NativeEnvironmentService } from 'vs/platform/environment/node/environmentService';
+import { SharedProcessEnvironmentService } from 'vs/platform/sharedProcess/node/sharedProcessEnvironmentService';
 import { GlobalExtensionEnablementService } from 'vs/platform/extensionManagement/common/extensionEnablementService';
 import { ExtensionGalleryService } from 'vs/platform/extensionManagement/common/extensionGalleryService';
 import { IExtensionGalleryService, IExtensionManagementService, IExtensionTipsService, IGlobalExtensionEnablementService } from 'vs/platform/extensionManagement/common/extensionManagement';
@@ -71,21 +71,18 @@ import { ILocalPtyService } from 'vs/platform/terminal/electron-sandbox/terminal
 import { PtyHostService } from 'vs/platform/terminal/node/ptyHostService';
 import { ExtensionsStorageSyncService, IExtensionsStorageSyncService } from 'vs/platform/userDataSync/common/extensionsStorageSync';
 import { IgnoredExtensionsManagementService, IIgnoredExtensionsManagementService } from 'vs/platform/userDataSync/common/ignoredExtensions';
-import { UserDataAutoSyncEnablementService } from 'vs/platform/userDataSync/common/userDataAutoSyncService';
-import { IUserDataAutoSyncEnablementService, IUserDataSyncBackupStoreService, IUserDataSyncLogService, IUserDataSyncResourceEnablementService, IUserDataSyncService, IUserDataSyncStoreManagementService, IUserDataSyncStoreService, IUserDataSyncUtilService, registerConfiguration as registerUserDataSyncConfiguration } from 'vs/platform/userDataSync/common/userDataSync';
+import { IUserDataSyncBackupStoreService, IUserDataSyncLogService, IUserDataSyncEnablementService, IUserDataSyncService, IUserDataSyncStoreManagementService, IUserDataSyncStoreService, IUserDataSyncUtilService, registerConfiguration as registerUserDataSyncConfiguration } from 'vs/platform/userDataSync/common/userDataSync';
 import { IUserDataSyncAccountService, UserDataSyncAccountService } from 'vs/platform/userDataSync/common/userDataSyncAccount';
 import { UserDataSyncBackupStoreService } from 'vs/platform/userDataSync/common/userDataSyncBackupStoreService';
 import { UserDataAutoSyncChannel, UserDataSyncAccountServiceChannel, UserDataSyncMachinesServiceChannel, UserDataSyncStoreManagementServiceChannel, UserDataSyncUtilServiceClient } from 'vs/platform/userDataSync/common/userDataSyncIpc';
 import { UserDataSyncLogService } from 'vs/platform/userDataSync/common/userDataSyncLog';
 import { IUserDataSyncMachinesService, UserDataSyncMachinesService } from 'vs/platform/userDataSync/common/userDataSyncMachines';
-import { UserDataSyncResourceEnablementService } from 'vs/platform/userDataSync/common/userDataSyncResourceEnablementService';
+import { UserDataSyncEnablementService } from 'vs/platform/userDataSync/common/userDataSyncEnablementService';
 import { UserDataSyncService } from 'vs/platform/userDataSync/common/userDataSyncService';
 import { UserDataSyncChannel } from 'vs/platform/userDataSync/common/userDataSyncServiceIpc';
 import { UserDataSyncStoreManagementService, UserDataSyncStoreService } from 'vs/platform/userDataSync/common/userDataSyncStoreService';
 import { UserDataAutoSyncService } from 'vs/platform/userDataSync/electron-sandbox/userDataAutoSyncService';
 import { ActiveWindowManager } from 'vs/platform/windows/node/windowTracker';
-import { IExtensionHostStarter, ipcExtensionHostStarterChannelName } from 'vs/platform/extensions/common/extensionHostStarter';
-import { ExtensionHostStarter } from 'vs/platform/extensions/node/extensionHostStarter';
 import { ISignService } from 'vs/platform/sign/common/sign';
 import { SignService } from 'vs/platform/sign/node/signService';
 import { ISharedTunnelsService } from 'vs/platform/remote/common/tunnel';
@@ -94,10 +91,12 @@ import { ipcSharedProcessTunnelChannelName, ISharedProcessTunnelService } from '
 import { SharedProcessTunnelService } from 'vs/platform/remote/node/sharedProcessTunnelService';
 import { ipcSharedProcessWorkerChannelName, ISharedProcessWorkerConfiguration, ISharedProcessWorkerService } from 'vs/platform/sharedProcess/common/sharedProcessWorkerService';
 import { SharedProcessWorkerService } from 'vs/platform/sharedProcess/electron-browser/sharedProcessWorkerService';
-import { IUserConfigurationFileService, UserConfigurationFileServiceId } from 'vs/platform/configuration/common/userConfigurationFileService';
 import { AssignmentService } from 'vs/platform/assignment/common/assignmentService';
 import { IUriIdentityService } from 'vs/platform/uriIdentity/common/uriIdentity';
 import { UriIdentityService } from 'vs/platform/uriIdentity/common/uriIdentityService';
+import { isLinux } from 'vs/base/common/platform';
+import { FileUserDataProvider } from 'vs/platform/userData/common/fileUserDataProvider';
+import { DiskFileSystemProviderClient, LOCAL_FILE_SYSTEM_CHANNEL_NAME } from 'vs/platform/files/common/diskFileSystemProviderClient';
 
 class SharedProcessMain extends Disposable {
 
@@ -162,7 +161,7 @@ class SharedProcessMain extends Disposable {
 			instantiationService.createInstance(StorageDataCleaner, this.configuration.backupWorkspacesPath),
 			instantiationService.createInstance(LogsDataCleaner),
 			instantiationService.createInstance(LocalizationsUpdater),
-			instantiationService.createInstance(DeprecatedExtensionsCleaner)
+			instantiationService.createInstance(ExtensionsCleaner)
 		));
 	}
 
@@ -179,7 +178,7 @@ class SharedProcessMain extends Disposable {
 		services.set(IMainProcessService, mainProcessService);
 
 		// Environment
-		const environmentService = new NativeEnvironmentService(this.configuration.args, productService);
+		const environmentService = new SharedProcessEnvironmentService(this.configuration.args, productService);
 		services.set(INativeEnvironmentService, environmentService);
 
 		// Logger
@@ -207,6 +206,18 @@ class SharedProcessMain extends Disposable {
 		const diskFileSystemProvider = this._register(new DiskFileSystemProvider(logService));
 		fileService.registerProvider(Schemas.file, diskFileSystemProvider);
 
+		const userDataFileSystemProvider = this._register(new FileUserDataProvider(
+			Schemas.file,
+			// Specifically for user data, use the disk file system provider
+			// from the main process to enable atomic read/write operations.
+			// Since user data can change very frequently across multiple
+			// processes, we want a single process handling these operations.
+			this._register(new DiskFileSystemProviderClient(mainProcessService.getChannel(LOCAL_FILE_SYSTEM_CHANNEL_NAME), { pathCaseSensitive: isLinux })),
+			Schemas.userData,
+			logService
+		));
+		fileService.registerProvider(Schemas.userData, userDataFileSystemProvider);
+
 		// Configuration
 		const configurationService = this._register(new ConfigurationService(environmentService.settingsResource, fileService));
 		services.set(IConfigurationService, configurationService);
@@ -221,9 +232,6 @@ class SharedProcessMain extends Disposable {
 			configurationService.initialize(),
 			storageService.initialize()
 		]);
-
-		// User Configuration File
-		services.set(IUserConfigurationFileService, ProxyChannel.toService<IUserConfigurationFileService>(mainProcessService.getChannel(UserConfigurationFileServiceId)));
 
 		// URI Identity
 		services.set(IUriIdentityService, new UriIdentityService(fileService));
@@ -318,8 +326,7 @@ class SharedProcessMain extends Disposable {
 		services.set(IUserDataSyncStoreService, new SyncDescriptor(UserDataSyncStoreService));
 		services.set(IUserDataSyncMachinesService, new SyncDescriptor(UserDataSyncMachinesService));
 		services.set(IUserDataSyncBackupStoreService, new SyncDescriptor(UserDataSyncBackupStoreService));
-		services.set(IUserDataAutoSyncEnablementService, new SyncDescriptor(UserDataAutoSyncEnablementService));
-		services.set(IUserDataSyncResourceEnablementService, new SyncDescriptor(UserDataSyncResourceEnablementService));
+		services.set(IUserDataSyncEnablementService, new SyncDescriptor(UserDataSyncEnablementService));
 		services.set(IUserDataSyncService, new SyncDescriptor(UserDataSyncService));
 
 		const ptyHostService = new PtyHostService({
@@ -336,9 +343,6 @@ class SharedProcessMain extends Disposable {
 
 		// Terminal
 		services.set(ILocalPtyService, this._register(ptyHostService));
-
-		// Extension Host
-		services.set(IExtensionHostStarter, this._register(new ExtensionHostStarter(logService)));
 
 		// Signing
 		services.set(ISignService, new SyncDescriptor(SignService));
@@ -397,10 +401,6 @@ class SharedProcessMain extends Disposable {
 		const localPtyService = accessor.get(ILocalPtyService);
 		const localPtyChannel = ProxyChannel.fromService(localPtyService);
 		this.server.registerChannel(TerminalIpcChannels.LocalPty, localPtyChannel);
-
-		// Extension Host
-		const extensionHostStarterChannel = ProxyChannel.fromService(accessor.get(IExtensionHostStarter));
-		this.server.registerChannel(ipcExtensionHostStarterChannelName, extensionHostStarterChannel);
 
 		// Tunnel
 		const sharedProcessTunnelChannel = ProxyChannel.fromService(accessor.get(ISharedProcessTunnelService));

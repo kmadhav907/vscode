@@ -104,8 +104,10 @@ export abstract class BaseCellViewModel extends Disposable {
 		return this._focusMode;
 	}
 	set focusMode(newMode: CellFocusMode) {
-		this._focusMode = newMode;
-		this._onDidChangeState.fire({ focusModeChanged: true });
+		if (this._focusMode !== newMode) {
+			this._focusMode = newMode;
+			this._onDidChangeState.fire({ focusModeChanged: true });
+		}
 	}
 
 	protected _textEditor?: ICodeEditor;
@@ -198,6 +200,14 @@ export abstract class BaseCellViewModel extends Disposable {
 				this.lineNumbers = 'inherit';
 			}
 		}));
+
+		if (this.model.collapseState?.inputCollapsed) {
+			this._inputCollapsed = true;
+		}
+
+		if (this.model.collapseState?.outputCollapsed) {
+			this._outputCollapsed = true;
+		}
 	}
 
 

@@ -129,6 +129,9 @@ export class BrowserWorkbenchEnvironmentService implements IWorkbenchEnvironment
 	get snippetsHome(): URI { return joinPath(this.userRoamingDataHome, 'snippets'); }
 
 	@memoize
+	get cacheHome(): URI { return joinPath(this.userRoamingDataHome, 'caches'); }
+
+	@memoize
 	get globalStorageHome(): URI { return URI.joinPath(this.userRoamingDataHome, 'globalStorage'); }
 
 	@memoize
@@ -232,7 +235,7 @@ export class BrowserWorkbenchEnvironmentService implements IWorkbenchEnvironment
 
 		const webviewExternalEndpointCommit = this.payload?.get('webviewExternalEndpointCommit');
 		return endpoint
-			.replace('{{commit}}', webviewExternalEndpointCommit ?? this.productService.commit ?? 'dc1a6699060423b8c4d2ced736ad70195378fddf')
+			.replace('{{commit}}', webviewExternalEndpointCommit ?? this.productService.commit ?? '69df0500a8963fc469161c038a14a39384d5a303')
 			.replace('{{quality}}', (webviewExternalEndpointCommit ? 'insider' : this.productService.quality) ?? 'insider');
 	}
 

@@ -5,31 +5,32 @@
 
 import { Event } from 'vs/base/common/event';
 import { isLinux } from 'vs/base/common/platform';
-import { FileSystemProviderCapabilities, FileDeleteOptions, IStat, FileType, FileReadStreamOptions, FileWriteOptions, FileOpenOptions, FileOverwriteOptions, IFileSystemProviderWithFileReadWriteCapability, IFileSystemProviderWithOpenReadWriteCloseCapability, IFileSystemProviderWithFileReadStreamCapability, IFileSystemProviderWithFileFolderCopyCapability, IWatchOptions } from 'vs/platform/files/common/files';
+import { FileSystemProviderCapabilities, FileDeleteOptions, IStat, FileType, FileReadStreamOptions, FileWriteOptions, FileOpenOptions, FileOverwriteOptions, IFileSystemProviderWithFileReadWriteCapability, IFileSystemProviderWithOpenReadWriteCloseCapability, IFileSystemProviderWithFileReadStreamCapability, IFileSystemProviderWithFileFolderCopyCapability, IWatchOptions, IFileSystemProviderWithFileAtomicReadCapability, FileAtomicReadOptions } from 'vs/platform/files/common/files';
 import { AbstractDiskFileSystemProvider } from 'vs/platform/files/common/diskFileSystemProvider';
 import { IMainProcessService } from 'vs/platform/ipc/electron-sandbox/services';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { ReadableStreamEvents } from 'vs/base/common/stream';
 import { URI } from 'vs/base/common/uri';
-import { IPCFileSystemProvider } from 'vs/platform/files/common/ipcFileSystemProvider';
+import { DiskFileSystemProviderClient, LOCAL_FILE_SYSTEM_CHANNEL_NAME } from 'vs/platform/files/common/diskFileSystemProviderClient';
 import { IDisposable } from 'vs/base/common/lifecycle';
-import { IDiskFileChange, ILogMessage, WatcherService } from 'vs/platform/files/common/watcher';
-import { ParcelFileWatcher } from 'vs/workbench/services/files/electron-sandbox/parcelWatcherService';
+import { IDiskFileChange, ILogMessage, AbstractRecursiveWatcherClient } from 'vs/platform/files/common/watcher';
+import { ParcelWatcherClient } from 'vs/workbench/services/files/electron-sandbox/parcelWatcherClient';
 import { ILogService } from 'vs/platform/log/common/log';
 import { ISharedProcessWorkerWorkbenchService } from 'vs/workbench/services/sharedProcess/electron-sandbox/sharedProcessWorkerWorkbenchService';
 
 /**
  * A sandbox ready disk file system provider that delegates almost all calls
- * to the main process via `IPCFileSystemProvider` except for recursive file
- * watching that is done via shared process workers due to CPU intensity.
+ * to the main process via `DiskFileSystemProviderServer` except for recursive
+ * file watching that is done via shared process workers due to CPU intensity.
  */
 export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider implements
 	IFileSystemProviderWithFileReadWriteCapability,
 	IFileSystemProviderWithOpenReadWriteCloseCapability,
 	IFileSystemProviderWithFileReadStreamCapability,
-	IFileSystemProviderWithFileFolderCopyCapability {
+	IFileSystemProviderWithFileFolderCopyCapability,
+	IFileSystemProviderWithFileAtomicReadCapability {
 
-	private readonly provider = this._register(new IPCFileSystemProvider(this.mainProcessService.getChannel('localFilesystem'), { pathCaseSensitive: isLinux, trash: true }));
+	private readonly provider = this._register(new DiskFileSystemProviderClient(this.mainProcessService.getChannel(LOCAL_FILE_SYSTEM_CHANNEL_NAME), { pathCaseSensitive: isLinux, trash: true }));
 
 	constructor(
 		private readonly mainProcessService: IMainProcessService,
@@ -45,7 +46,7 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 
 		// Forward events from the embedded provider
 		this.provider.onDidChangeFile(e => this._onDidChangeFile.fire(e));
-		this.provider.onDidErrorOccur(e => this._onDidErrorOccur.fire(e));
+		this.provider.onDidWatchError(e => this._onDidWatchError.fire(e));
 	}
 
 	//#region File Capabilities
@@ -70,8 +71,8 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 
 	//#region File Reading/Writing
 
-	readFile(resource: URI): Promise<Uint8Array> {
-		return this.provider.readFile(resource);
+	readFile(resource: URI, opts?: FileAtomicReadOptions): Promise<Uint8Array> {
+		return this.provider.readFile(resource, opts);
 	}
 
 	readFileStream(resource: URI, opts: FileReadStreamOptions, token: CancellationToken): ReadableStreamEvents<Uint8Array> {
@@ -137,8 +138,8 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 		onChange: (changes: IDiskFileChange[]) => void,
 		onLogMessage: (msg: ILogMessage) => void,
 		verboseLogging: boolean
-	): WatcherService {
-		return new ParcelFileWatcher(
+	): AbstractRecursiveWatcherClient {
+		return new ParcelWatcherClient(
 			changes => onChange(changes),
 			msg => onLogMessage(msg),
 			verboseLogging,

@@ -14,7 +14,7 @@ import { ContextKeyExpr, RawContextKey } from 'vs/platform/contextkey/common/con
 import { OutputRenderer } from 'vs/workbench/contrib/notebook/browser/view/output/outputRenderer';
 import { CellViewModel, IModelDecorationsChangeAccessor, INotebookEditorViewState, INotebookViewCellsUpdateEvent, NotebookViewModel } from 'vs/workbench/contrib/notebook/browser/viewModel/notebookViewModel';
 import { NotebookCellTextModel } from 'vs/workbench/contrib/notebook/common/model/notebookCellTextModel';
-import { CellKind, NotebookCellMetadata, IOrderedMimeType, INotebookRendererInfo, ICellOutput, INotebookCellStatusBarItem, NotebookCellInternalMetadata, NotebookDocumentMetadata } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { CellKind, NotebookCellMetadata, IOrderedMimeType, INotebookRendererInfo, ICellOutput, INotebookCellStatusBarItem, NotebookCellInternalMetadata, NotebookDocumentMetadata, NotebookCellCollapseState } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { ICellRange, cellRangesToIndexes, reduceCellRanges } from 'vs/workbench/contrib/notebook/common/notebookRange';
 import { IWebview } from 'vs/workbench/contrib/webview/browser/webview';
 import { NotebookTextModel } from 'vs/workbench/contrib/notebook/common/model/notebookTextModel';
@@ -249,9 +249,11 @@ export interface ICellViewModel extends IGenericCellViewModel {
 	readonly model: NotebookCellTextModel;
 	readonly id: string;
 	readonly textBuffer: IReadonlyTextBuffer;
-	readonly layoutInfo: { totalHeight: number; };
+	readonly layoutInfo: { totalHeight: number; bottomToolbarOffset: number; editorWidth: number; };
 	readonly onDidChangeLayout: Event<{ totalHeight?: boolean | number; outerWidth?: number; }>;
 	readonly onDidChangeCellStatusBarItems: Event<void>;
+	readonly onCellDecorationsChanged: Event<{ added: INotebookCellDecorationOptions[], removed: INotebookCellDecorationOptions[] }>;
+	readonly onDidChangeState: Event<CellViewModelStateChangeEvent>;
 	readonly editStateSource: string;
 	readonly editorAttached: boolean;
 	isInputCollapsed: boolean;
@@ -328,6 +330,7 @@ export interface INotebookEditorOptions extends ITextEditorOptions {
 	readonly cellSelections?: ICellRange[];
 	readonly isReadOnly?: boolean;
 	readonly viewState?: INotebookEditorViewState;
+	readonly defaultCellCollapseState?: NotebookCellCollapseState;
 }
 
 export type INotebookEditorContributionCtor = IConstructorSignature1<INotebookEditor, INotebookEditorContribution>;
@@ -398,7 +401,8 @@ export interface INotebookEditor {
 	 * An event emitted when the model of this editor has changed.
 	 */
 	readonly onDidChangeModel: Event<NotebookTextModel | undefined>;
-	readonly onDidFocusEditorWidget: Event<void>;
+	readonly onDidFocusWidget: Event<void>;
+	readonly onDidBlurWidget: Event<void>;
 	readonly onDidScroll: Event<void>;
 	readonly onDidChangeActiveCell: Event<void>;
 	readonly onDidChangeActiveKernel: Event<void>;
@@ -434,9 +438,14 @@ export interface INotebookEditor {
 	getSelectionViewModels(): ICellViewModel[];
 
 	/**
-	 * Focus the notebook editor cell list
+	 * Focus the active cell in notebook cell list
 	 */
 	focus(): void;
+
+	/**
+	 * Focus the notebook cell list container
+	 */
+	focusContainer(): void;
 
 	hasEditorFocus(): boolean;
 	hasWebviewFocus(): boolean;

@@ -5,25 +5,25 @@
 
 import * as fs from 'fs';
 import { gracefulify } from 'graceful-fs';
-import { retry } from 'vs/base/common/async';
+import { Barrier, retry } from 'vs/base/common/async';
+import { ResourceMap } from 'vs/base/common/map';
 import { VSBuffer } from 'vs/base/common/buffer';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { Event } from 'vs/base/common/event';
 import { isEqual } from 'vs/base/common/extpath';
-import { IDisposable } from 'vs/base/common/lifecycle';
+import { IDisposable, toDisposable } from 'vs/base/common/lifecycle';
 import { basename, dirname } from 'vs/base/common/path';
 import { isLinux, isWindows } from 'vs/base/common/platform';
-import { joinPath } from 'vs/base/common/resources';
+import { extUriBiasedIgnorePathCase, joinPath } from 'vs/base/common/resources';
 import { newWriteableStream, ReadableStreamEvents } from 'vs/base/common/stream';
 import { URI } from 'vs/base/common/uri';
 import { IDirent, Promises, RimRafMode, SymlinkSupport } from 'vs/base/node/pfs';
 import { localize } from 'vs/nls';
-import { createFileSystemProviderError, FileDeleteOptions, FileOpenOptions, FileOverwriteOptions, FileReadStreamOptions, FileSystemProviderCapabilities, FileSystemProviderError, FileSystemProviderErrorCode, FileType, FileWriteOptions, IFileSystemProviderWithFileFolderCopyCapability, IFileSystemProviderWithFileReadStreamCapability, IFileSystemProviderWithFileReadWriteCapability, IFileSystemProviderWithOpenReadWriteCloseCapability, isFileOpenForWriteOptions, IStat } from 'vs/platform/files/common/files';
+import { createFileSystemProviderError, FileAtomicReadOptions, FileDeleteOptions, FileOpenOptions, FileOverwriteOptions, FileReadStreamOptions, FileSystemProviderCapabilities, FileSystemProviderError, FileSystemProviderErrorCode, FileType, FileWriteOptions, IFileSystemProviderWithFileAtomicReadCapability, IFileSystemProviderWithFileFolderCopyCapability, IFileSystemProviderWithFileReadStreamCapability, IFileSystemProviderWithFileReadWriteCapability, IFileSystemProviderWithOpenReadWriteCloseCapability, isFileOpenForWriteOptions, IStat } from 'vs/platform/files/common/files';
 import { readFileIntoStream } from 'vs/platform/files/common/io';
-import { FileWatcher as NodeJSWatcherService } from 'vs/platform/files/node/watcher/nodejs/watcherService';
-import { FileWatcher as NsfwWatcherService } from 'vs/platform/files/node/watcher/nsfw/watcherService';
-import { FileWatcher as ParcelWatcherService } from 'vs/platform/files/node/watcher/parcel/watcherService';
-import { IDiskFileChange, ILogMessage, IWatchRequest, WatcherService } from 'vs/platform/files/common/watcher';
+import { NodeJSFileWatcher } from 'vs/platform/files/node/watcher/nodejs/nodejsWatcher';
+import { ParcelWatcherClient } from 'vs/platform/files/node/watcher/parcel/parcelWatcherClient';
+import { AbstractRecursiveWatcherClient, IDiskFileChange, ILogMessage, IWatchRequest } from 'vs/platform/files/common/watcher';
 import { ILogService } from 'vs/platform/log/common/log';
 import { AbstractDiskFileSystemProvider } from 'vs/platform/files/common/diskFileSystemProvider';
 import { toErrorMessage } from 'vs/base/common/errorMessage';
@@ -63,14 +63,14 @@ export interface IWatcherOptions {
 
 export interface IDiskFileSystemProviderOptions {
 	watcher?: IWatcherOptions;
-	legacyWatcher?: string;
 }
 
 export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider implements
 	IFileSystemProviderWithFileReadWriteCapability,
 	IFileSystemProviderWithOpenReadWriteCloseCapability,
 	IFileSystemProviderWithFileReadStreamCapability,
-	IFileSystemProviderWithFileFolderCopyCapability {
+	IFileSystemProviderWithFileFolderCopyCapability,
+	IFileSystemProviderWithFileAtomicReadCapability {
 
 	constructor(
 		logService: ILogService,
@@ -83,7 +83,7 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 
 	readonly onDidChangeCapabilities: Event<void> = Event.None;
 
-	protected _capabilities: FileSystemProviderCapabilities | undefined;
+	private _capabilities: FileSystemProviderCapabilities | undefined;
 	get capabilities(): FileSystemProviderCapabilities {
 		if (!this._capabilities) {
 			this._capabilities =
@@ -91,7 +91,8 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 				FileSystemProviderCapabilities.FileOpenReadWriteClose |
 				FileSystemProviderCapabilities.FileReadStream |
 				FileSystemProviderCapabilities.FileFolderCopy |
-				FileSystemProviderCapabilities.FileWriteUnlock;
+				FileSystemProviderCapabilities.FileWriteUnlock |
+				FileSystemProviderCapabilities.FileAtomicRead;
 
 			if (isLinux) {
 				this._capabilities |= FileSystemProviderCapabilities.PathCaseSensitive;
@@ -174,13 +175,56 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 
 	//#region File Reading/Writing
 
-	async readFile(resource: URI): Promise<Uint8Array> {
+	private readonly resourceLocks = new ResourceMap<Barrier>(resource => extUriBiasedIgnorePathCase.getComparisonKey(resource));
+
+	private async createResourceLock(resource: URI): Promise<IDisposable> {
+		this.logService.trace(`[Disk FileSystemProvider]: request to acquire resource lock (${this.toFilePath(resource)})`);
+
+		// Await pending locks for resource
+		// It is possible for a new lock being
+		// added right after opening, so we have
+		// to loop over locks until no lock remains
+		let existingLock: Barrier | undefined = undefined;
+		while (existingLock = this.resourceLocks.get(resource)) {
+			this.logService.trace(`[Disk FileSystemProvider]: waiting for resource lock to be released (${this.toFilePath(resource)})`);
+
+			await existingLock.wait();
+		}
+
+		// Store new
+		const newLock = new Barrier();
+		this.resourceLocks.set(resource, newLock);
+
+		this.logService.trace(`[Disk FileSystemProvider]: new resource lock created (${this.toFilePath(resource)})`);
+
+		return toDisposable(() => {
+			this.logService.trace(`[Disk FileSystemProvider]: resource lock disposed (${this.toFilePath(resource)})`);
+
+			// Delete and open lock
+			this.resourceLocks.delete(resource);
+			newLock.open();
+		});
+	}
+
+	async readFile(resource: URI, options?: FileAtomicReadOptions): Promise<Uint8Array> {
+		let lock: IDisposable | undefined = undefined;
 		try {
+			if (options?.atomic) {
+				this.logService.trace(`[Disk FileSystemProvider]: atomic read operation started (${this.toFilePath(resource)})`);
+
+				// When the read should be atomic, make sure
+				// to await any pending locks for the resource
+				// and lock for the duration of the read.
+				lock = await this.createResourceLock(resource);
+			}
+
 			const filePath = this.toFilePath(resource);
 
 			return await Promises.readFile(filePath);
 		} catch (error) {
 			throw this.toFileSystemProviderError(error);
+		} finally {
+			lock?.dispose();
 		}
 	}
 
@@ -229,11 +273,22 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 	}
 
 	private readonly mapHandleToPos = new Map<number, number>();
+	private readonly mapHandleToLock = new Map<number, IDisposable>();
 
 	private readonly writeHandles = new Map<number, URI>();
 	private canFlush: boolean = true;
 
 	async open(resource: URI, opts: FileOpenOptions): Promise<number> {
+
+		// Writes: guard multiple writes to the same resource
+		// behind a single lock to prevent races when writing
+		// from multiple places at the same time to the same file
+		let lock: IDisposable | undefined = undefined;
+		if (isFileOpenForWriteOptions(opts)) {
+			lock = await this.createResourceLock(resource);
+		}
+
+		let handle: number | undefined = undefined;
 		try {
 			const filePath = this.toFilePath(resource);
 
@@ -282,28 +337,41 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 				flags = 'r';
 			}
 
-			const handle = await Promises.open(filePath, flags);
+			// Finally open handle to file path
+			handle = await Promises.open(filePath, flags);
 
-			// remember this handle to track file position of the handle
-			// we init the position to 0 since the file descriptor was
-			// just created and the position was not moved so far (see
-			// also http://man7.org/linux/man-pages/man2/open.2.html -
-			// "The file offset is set to the beginning of the file.")
-			this.mapHandleToPos.set(handle, 0);
-
-			// remember that this handle was used for writing
-			if (isFileOpenForWriteOptions(opts)) {
-				this.writeHandles.set(handle, resource);
-			}
-
-			return handle;
 		} catch (error) {
+
+			// Release lock because we have no valid handle
+			// if we did open a lock during this operation
+			lock?.dispose();
+
+			// Rethrow as file system provider error
 			if (isFileOpenForWriteOptions(opts)) {
 				throw await this.toFileSystemProviderWriteError(resource, error);
 			} else {
 				throw this.toFileSystemProviderError(error);
 			}
 		}
+
+		// remember this handle to track file position of the handle
+		// we init the position to 0 since the file descriptor was
+		// just created and the position was not moved so far (see
+		// also http://man7.org/linux/man-pages/man2/open.2.html -
+		// "The file offset is set to the beginning of the file.")
+		this.mapHandleToPos.set(handle, 0);
+
+		// remember that this handle was used for writing
+		if (isFileOpenForWriteOptions(opts)) {
+			this.writeHandles.set(handle, resource);
+		}
+
+		// remember that this handle has an associated lock
+		if (lock) {
+			this.mapHandleToLock.set(handle, lock);
+		}
+
+		return handle;
 	}
 
 	async close(fd: number): Promise<void> {
@@ -328,6 +396,12 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 			return await Promises.close(fd);
 		} catch (error) {
 			throw this.toFileSystemProviderError(error);
+		} finally {
+			const lockForHandle = this.mapHandleToLock.get(fd);
+			if (lockForHandle) {
+				this.mapHandleToLock.delete(fd);
+				lockForHandle.dispose();
+			}
 		}
 	}
 
@@ -454,17 +528,13 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 		try {
 			const filePath = this.toFilePath(resource);
 
-			await this.doDelete(filePath, opts);
+			if (opts.recursive) {
+				await Promises.rm(filePath, RimRafMode.MOVE);
+			} else {
+				await Promises.unlink(filePath);
+			}
 		} catch (error) {
 			throw this.toFileSystemProviderError(error);
-		}
-	}
-
-	protected async doDelete(filePath: string, opts: FileDeleteOptions): Promise<void> {
-		if (opts.recursive) {
-			await Promises.rm(filePath, RimRafMode.MOVE);
-		} else {
-			await Promises.unlink(filePath);
 		}
 	}
 
@@ -555,38 +625,15 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 		onChange: (changes: IDiskFileChange[]) => void,
 		onLogMessage: (msg: ILogMessage) => void,
 		verboseLogging: boolean
-	): WatcherService {
-		let watcherImpl: {
-			new(
-				onChange: (changes: IDiskFileChange[]) => void,
-				onLogMessage: (msg: ILogMessage) => void,
-				verboseLogging: boolean,
-				watcherOptions?: IWatcherOptions
-			): WatcherService
-		};
-
-		let enableLegacyWatcher = false;
-		if (this.options?.watcher?.usePolling) {
-			enableLegacyWatcher = false; // must use Parcel watcher for when polling is required
-		} else {
-			enableLegacyWatcher = this.options?.legacyWatcher === 'on'; // setting always wins
-		}
-
-		if (enableLegacyWatcher) {
-			watcherImpl = NsfwWatcherService;
-		} else {
-			watcherImpl = ParcelWatcherService;
-		}
-
-		return new watcherImpl(
+	): AbstractRecursiveWatcherClient {
+		return new ParcelWatcherClient(
 			changes => onChange(changes),
 			msg => onLogMessage(msg),
-			verboseLogging,
-			this.options?.watcher
+			verboseLogging
 		);
 	}
 
-	protected override doWatch(watcher: WatcherService, requests: IWatchRequest[]): Promise<void> {
+	protected override doWatch(watcher: AbstractRecursiveWatcherClient, requests: IWatchRequest[]): Promise<void> {
 		const usePolling = this.options?.watcher?.usePolling;
 		if (usePolling === true) {
 			for (const request of requests) {
@@ -609,7 +656,7 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 		onLogMessage: (msg: ILogMessage) => void,
 		verboseLogging: boolean
 	): IDisposable & { setVerboseLogging: (verboseLogging: boolean) => void } {
-		return new NodeJSWatcherService(
+		return new NodeJSFileWatcher(
 			path,
 			changes => onChange(changes),
 			msg => onLogMessage(msg),
